@@ -1,0 +1,33 @@
+# Build outputs
+build/
+cmake-build-*/
+*.o
+*.so
+*.a
+*.exe
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Reference directory - Go implementation
+reference/**/*.go
+reference/**/*.mod
+reference/**/*.sum
+reference/**/go.sum
+reference/**/go.mod
+
+# Dependency directories
+vcpkg/
+third_party/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.bak
