@@ -1,5 +1,5 @@
 // VMess代理服务器主程序入口
-#include <iostream>
+import std;
 
 int main(int argc, char* argv[]) {
     std::cout << "VMess C++ Proxy Server" << std::endl;
