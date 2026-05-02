@@ -1,0 +1,167 @@
+name: Build and Deploy VLESS Server
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '*.md'
+      - 'doc/**'
+      - 'reference/**'
+
+  workflow_dispatch:
+    inputs:
+      log_level:
+        description: '日志等级 (debug/info/warn/error)'
+        required: false
+        default: 'info'
+      reason:
+        description: '部署原因'
+        required: false
+        default: ''
+
+env:
+  BINARY_NAME: vmess_server
+  DOCKER_IMAGE: vmess_server
+
+jobs:
+  # ══════════════════════════════════════════════
+  # 编译阶段：在 GitHub Actions 中编译 C++ 代码
+  # ══════════════════════════════════════════════
+  build:
+    name: Build C++ Binary
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            liburing-dev \
+            g++-12
+
+      - name: Configure CMake
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER=g++-12
+
+      - name: Build
+        run: |
+          cmake --build build --config Release -j$(nproc)
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vmess_server_binary
+          path: build/${{ env.BINARY_NAME }}
+          retention-days: 1
+
+  # ══════════════════════════════════════════════
+  # 部署阶段：将二进制推送到服务器并构建镜像
+  # ══════════════════════════════════════════════
+  deploy:
+    name: Deploy to Server
+    runs-on: ubuntu-latest
+    needs: build
+    if: always() && !failure() && !cancelled()
+
+    steps:
+      - name: Checkout code (for Dockerfile)
+        uses: actions/checkout@v4
+
+      - name: Download binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: vmess_server_binary
+
+      - name: Prepare deployment package
+        run: |
+          # 创建部署目录
+          mkdir -p deploy
+          # 复制二进制（从 artifact 下载目录）
+          cp ${{ env.BINARY_NAME }} deploy/
+          # 复制 Dockerfile
+          cp Dockerfile deploy/
+          # 打包
+          tar -czf deploy.tar.gz -C deploy .
+          ls -lh deploy.tar.gz
+
+      - name: Copy deployment package to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "deploy.tar.gz"
+          target: "/tmp/"
+
+      - name: Deploy on server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 5m
+          script: |
+            set -e
+            echo "=== 开始部署 VLESS Server ==="
+            echo "原因: ${{ github.event.inputs.reason || 'auto deploy' }}"
+            echo "Commit: ${{ github.sha }}"
+
+            # 解压部署包
+            mkdir -p /tmp/vmess_deploy
+            tar -xzf /tmp/deploy.tar.gz -C /tmp/vmess_deploy
+            cd /tmp/vmess_deploy
+
+            # 确保二进制可执行
+            chmod +x ${{ env.BINARY_NAME }}
+
+            # 构建 Docker 镜像
+            echo "=== 构建 Docker 镜像 ==="
+            docker build -t ${{ env.DOCKER_IMAGE }}:latest .
+
+            # 停止并移除旧容器
+            echo "=== 重启容器 ==="
+            docker stop vmess || true
+            docker rm vmess || true
+
+            # 启动新容器（使用 host 网络模式）
+            LOG_LEVEL="${{ github.event.inputs.log_level || 'info' }}"
+            echo "日志等级: ${LOG_LEVEL}"
+
+            docker run -d --name vmess \
+              --network host \
+              --privileged \
+              --restart unless-stopped \
+              ${{ env.DOCKER_IMAGE }}:latest 1080 ${LOG_LEVEL}
+
+            # 清理临时文件
+            rm -rf /tmp/vmess_deploy /tmp/deploy.tar.gz
+
+            echo "=== 部署完成 ==="
+            docker ps | grep vmess
+
+      - name: Health check
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            echo "=== 容器状态 ==="
+            docker ps | grep vmess
+
+            echo "=== 查看日志（最后 20 行）==="
+            docker logs vmess --tail 20 || true
+
+            echo "=== 检查端口监听 ==="
+            ss -tlnp | grep 1080 || echo "警告: 端口 1080 未监听"
+
+            echo "=== 健康检查完成 ==="
