@@ -21,7 +21,6 @@ target_link_libraries(vmess_server_lib PUBLIC io_uring vless_proxy)
 
 # 主程序可执行文件
 add_executable(vmess_server main.cpp)
-target_link_options(vmess_server PRIVATE -static-libgcc -static-libstdc++)
 target_link_libraries(vmess_server PRIVATE
     vmess_server_lib
     pthread

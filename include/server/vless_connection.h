@@ -18,16 +18,18 @@ namespace server {
  * @brief VLESS 协议连接
  *
  * 生命周期：
- *   HANDSHAKE -> RELAY -> CLOSED
+ *   HANDSHAKE -> CONNECTING -> SENDING_RESPONSE -> RELAY -> CLOSED
  *
- * 握手阶段由协程驱动，转发阶段纯 io_uring。
+ * 握手阶段由协程驱动，连接和响应发送使用 io_uring 异步操作
  */
 class VlessConnection : public Connection {
 public:
     enum class State {
-        HANDSHAKE,  // 协程解析 VLESS 请求头
-        RELAY,      // 纯 io_uring 双向转发
-        CLOSED      // 连接已关闭
+        HANDSHAKE,         // 协程解析 VLESS 请求头
+        CONNECTING,         // 异步连接目标服务器
+        SENDING_RESPONSE,   // 异步发送 VLESS 响应头
+        RELAY,              // 纯 io_uring 双向转发
+        CLOSED              // 连接已关闭
     };
 
     VlessConnection(int clientFd, net::IoUring& uring);
@@ -51,7 +53,16 @@ private:
     // 握手阶段
     void prepareHandshakeIO(net::IoUring& uring);
     void onHandshakeIOComplete(int fd, int result);
-    coro::Task<int> processHandshake();
+    coro::Task<proxy::vless::Request> processHandshake();
+    void startConnecting();  // 开始异步连接目标服务器
+
+    // 连接目标阶段（异步）
+    void prepareConnectingIO(net::IoUring& uring);
+    void onConnectingIOComplete(int fd, int result);
+
+    // 发送响应阶段（异步）
+    void prepareSendingResponseIO(net::IoUring& uring);
+    void onSendingResponseIOComplete(int fd, int result);
 
     // 转发阶段
     void prepareRelayIO(net::IoUring& uring);
@@ -65,9 +76,18 @@ private:
     int targetFd_ = -1;
     net::IoUring& uring_;
     coro::UringBufferedStream stream_;
-    coro::Task<int> handshakeTask_;
+    coro::Task<proxy::vless::Request> handshakeTask_;  // 返回 Request 而不是 targetFd
     bool handshakeStarted_ = false;
     State state_ = State::HANDSHAKE;
+
+    // 异步连接阶段使用的临时数据
+    proxy::vless::Request pendingRequest_;  // 握手解析出的请求
+    int connectingFd_ = -1;                // 正在连接的 socket fd
+    struct sockaddr_in targetAddr_{};       // 目标地址
+
+    // 发送响应阶段使用的缓冲区
+    std::array<uint8_t, 2> responseBuf_;  // VLESS 响应头缓冲区（version + addons_len）
+    size_t responseLen_ = 0;              // 响应长度
 
     // 转发缓冲区
     alignas(64) std::array<uint8_t, 4096> clientRecvBuf_;

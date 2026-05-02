@@ -165,6 +165,15 @@ public:
     bool prepareShutdown(int fd);
     
     /**
+     * @brief 准备 connect 操作（不提交）
+     * @param fd socket fd
+     * @param addr 目标地址
+     * @param addrLen 地址长度
+     * @return true 如果准备成功
+     */
+    bool prepareConnect(int fd, const struct sockaddr* addr, socklen_t addrLen);
+
+    /**
      * @brief 准备 close 操作（不提交）
      * @param fd socket fd
      * @return true 如果准备成功

@@ -195,6 +195,19 @@ bool IoUring::prepareShutdown(int fd) {
     return true;
 }
 
+bool IoUring::prepareConnect(int fd, const struct sockaddr* addr, socklen_t addrLen) {
+    if (!ring_) return false;
+    
+    struct io_uring_sqe* sqe = io_uring_get_sqe(ring_);
+    if (!sqe) return false;
+    
+    io_uring_prep_connect(sqe, fd, addr, addrLen);
+    
+    setUserData(sqe, fd, UringEventType::WRITE);  // connect 视为写事件
+    
+    return true;
+}
+
 bool IoUring::prepareClose(int fd) {
     if (!ring_) return false;
     

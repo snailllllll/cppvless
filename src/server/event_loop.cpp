@@ -7,6 +7,7 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <errno.h>
 
 #include <cstring>
 
@@ -66,11 +67,18 @@ void EventLoop::run(uint16_t listenPort) {
         });
 
         // 状态刚变化的连接需要重新 prepareIO（例如 HANDSHAKE → RELAY）
+        bool hasNewIO = false;
         for (auto& [fd, conn] : connections_) {
             if (conn->needsPrepare()) {
                 conn->prepareIO(uring_);
                 conn->clearNeedsPrepare();
+                hasNewIO = true;
             }
+        }
+
+        // 立即提交新准备的 I/O，不等待下一轮迭代
+        if (hasNewIO) {
+            uring_.submitAll();
         }
 
         cleanupClosedConnections();
@@ -110,6 +118,12 @@ void EventLoop::handleCqe(const net::UringRequest& req, int result, uint32_t fla
 
             int clientFd = result;
             LOG_INFO("EventLoop", "New connection: fd=", clientFd);
+
+            // 设置非阻塞（io_uring 需要非阻塞 socket）
+            int flags = fcntl(clientFd, F_GETFL, 0);
+            if (flags >= 0) {
+                fcntl(clientFd, F_SETFL, flags | O_NONBLOCK);
+            }
 
             auto conn = std::make_unique<VlessConnection>(clientFd, uring_);
             connections_[clientFd] = std::move(conn);
