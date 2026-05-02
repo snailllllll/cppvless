@@ -43,6 +43,10 @@ public:
     // 获取当前状态（调试用）
     State state() const { return state_; }
 
+    // Connection 接口：通知 EventLoop 需要重新 prepareIO()
+    bool needsPrepare() const override { return needsPrepare_; }
+    void clearNeedsPrepare() override { needsPrepare_ = false; }
+
 private:
     // 握手阶段
     void prepareHandshakeIO(net::IoUring& uring);
@@ -87,6 +91,9 @@ private:
 
     // 握手阶段 buffer 中剩余的客户端数据（请求头之后的 payload）
     std::vector<uint8_t> handshakeRemaining_;
+
+    // 通知 EventLoop 需要重新调用 prepareIO()（状态刚变化）
+    bool needsPrepare_ = false;
 };
 
 } // namespace server

@@ -48,6 +48,16 @@ public:
      * @brief 判断是否持有该 fd（支持 target fd 反向查找）
      */
     virtual bool hasFd(int fd) const { return fd == primaryFd(); }
+
+    /**
+     * @brief 是否需要重新 prepareIO()（状态刚变化，如 HANDSHAKE→RELAY）
+     */
+    virtual bool needsPrepare() const { return false; }
+
+    /**
+     * @brief 清除 needsPrepare 标志
+     */
+    virtual void clearNeedsPrepare() {}
 };
 
 } // namespace server

@@ -172,13 +172,13 @@ coro::Task<int> VlessConnection::processHandshake() {
 
         auto response = proxy::vless::Decoder::encodeResponse(req.version);
         LOG_DEBUG("VlessConnection", "fd=", clientFd_, " sending VLESS response, len=", response.size());
-        ssize_t sent = send(clientFd_, response.data(), response.size(), 0);
+        ssize_t sent = send(clientFd_, response.data(), response.size(), MSG_NOSIGNAL);
         if (sent != static_cast<ssize_t>(response.size())) {
-            LOG_WARN("VlessConnection", "fd=", clientFd_, " send response failed: ", sent, " errno=", errno);
+            LOG_WARN("VlessConnection", "fd=", clientFd_, " send response failed: sent=", sent, " errno=", errno, " (", strerror(errno), ")");
             ::close(targetFd);
             co_return -1;
         }
-        LOG_DEBUG("VlessConnection", "fd=", clientFd_, " VLESS response sent successfully");
+        LOG_INFO("VlessConnection", "fd=", clientFd_, " VLESS response sent successfully, starting RELAY");
 
         co_return targetFd;
     } catch (const std::exception& e) {
@@ -269,6 +269,9 @@ void VlessConnection::enterRelayState(int targetFd) {
         LOG_DEBUG("VlessConnection", "fd=", clientFd_, " Handshake remaining data queued: ", handshakeRemaining_.size(),
                   " bytes -> targetFd=", targetFd);
     }
+
+    // 通知 EventLoop 需要重新调用 prepareIO() 来提交 RELAY 阶段的 I/O
+    needsPrepare_ = true;
 }
 
 } // namespace server

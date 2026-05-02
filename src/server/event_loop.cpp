@@ -65,6 +65,14 @@ void EventLoop::run(uint16_t listenPort) {
             handleCqe(req, result, flags);
         });
 
+        // 状态刚变化的连接需要重新 prepareIO（例如 HANDSHAKE → RELAY）
+        for (auto& [fd, conn] : connections_) {
+            if (conn->needsPrepare()) {
+                conn->prepareIO(uring_);
+                conn->clearNeedsPrepare();
+            }
+        }
+
         cleanupClosedConnections();
     }
 
