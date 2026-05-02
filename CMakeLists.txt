@@ -21,7 +21,6 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 # 子目录
 add_subdirectory(src)
 add_subdirectory(tests)
-add_subdirectory(examples)
 
 # 打印配置信息
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")

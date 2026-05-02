@@ -5,7 +5,7 @@ target_include_directories(socket PUBLIC ${PROJECT_SOURCE_DIR}/include)
 # io_uring 封装库
 add_library(io_uring STATIC net/io_uring.cpp)
 target_include_directories(io_uring PUBLIC ${PROJECT_SOURCE_DIR}/include)
-target_link_libraries(io_uring PUBLIC /usr/lib64/liburing.a)
+target_link_libraries(io_uring PUBLIC uring)
 
 # VLESS 协议库
 add_library(vless_proxy STATIC proxy/vless/decoder.cpp)
