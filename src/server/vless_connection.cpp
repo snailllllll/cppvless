@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <fcntl.h>
 
 #include <stdexcept>
 #include <cstring>
