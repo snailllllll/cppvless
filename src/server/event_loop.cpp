@@ -1,5 +1,6 @@
 #include "server/event_loop.h"
 #include "server/vless_connection.h"
+#include "coro/uring_awaitable.h"
 #include "net/socket.h"
 #include "common/log.h"
 
@@ -23,11 +24,9 @@ void EventLoop::run(uint16_t listenPort) {
         throw std::runtime_error("failed to create listen socket");
     }
 
-    // 设置地址复用
     int opt = 1;
     setsockopt(listenFd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-    // 绑定
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
@@ -37,36 +36,46 @@ void EventLoop::run(uint16_t listenPort) {
         throw std::runtime_error("failed to bind listen socket");
     }
 
-    // 监听
     if (::listen(listenFd_, 128) < 0) {
         close(listenFd_);
         throw std::runtime_error("failed to listen");
     }
 
-    // 设置非阻塞
     int flags = fcntl(listenFd_, F_GETFL, 0);
     fcntl(listenFd_, F_SETFL, flags | O_NONBLOCK);
 
-    // 准备第一个 accept
     acceptNewConnection();
 
     running_ = true;
     LOG_INFO("EventLoop", "Server listening on port ", listenPort);
 
     while (running_) {
-        LOG_DEBUG("EventLoop", "=== loop iteration, connections=", connections_.size(), " ===");
+        // 1. 让所有连接准备 I/O（主要是握手阶段的 recv）
         for (auto& [fd, conn] : connections_) {
             conn->prepareIO(uring_);
         }
 
+        // 2. 提交并等待完成
         uring_.submitAndWait(1);
 
+        // 3. 处理完成事件
         uring_.processCompletions([this](const net::UringRequest& req,
-                                          int result, uint32_t flags) {
-            handleCqe(req, result, flags);
+                                          int result, uint32_t flags,
+                                          uint64_t userData) {
+            if (coro::isCoroutineUserData(userData)) {
+                // 协程上下文：直接通过 CoroutineRegistry resume
+                int fd = coro::userDataFd(userData);
+                auto type = coro::userDataType(userData);
+                LOG_DEBUG("EventLoop", "Coroutine CQE: fd=", fd,
+                          " type=", static_cast<int>(type), " result=", result);
+                coro::CoroutineRegistry::instance().takeAndResume(fd, type, result);
+            } else {
+                // 旧式请求：交给 handleCqe 处理
+                handleCqe(req, result, flags, userData);
+            }
         });
 
-        // 状态刚变化的连接需要重新 prepareIO（例如 HANDSHAKE → RELAY）
+        // 4. 状态变化的连接需要重新 prepareIO
         bool hasNewIO = false;
         for (auto& [fd, conn] : connections_) {
             if (conn->needsPrepare()) {
@@ -76,15 +85,14 @@ void EventLoop::run(uint16_t listenPort) {
             }
         }
 
-        // 立即提交新准备的 I/O，不等待下一轮迭代
         if (hasNewIO) {
             uring_.submitAll();
         }
 
+        // 5. 清理已关闭的连接
         cleanupClosedConnections();
     }
 
-    // 清理
     connections_.clear();
     if (listenFd_ >= 0) {
         close(listenFd_);
@@ -97,7 +105,6 @@ void EventLoop::stop() {
 }
 
 void EventLoop::acceptNewConnection() {
-    // 准备 accept（使用固定缓冲区）
     static sockaddr_in clientAddr;
     static socklen_t addrLen = sizeof(clientAddr);
 
@@ -106,8 +113,11 @@ void EventLoop::acceptNewConnection() {
                          &addrLen);
 }
 
-void EventLoop::handleCqe(const net::UringRequest& req, int result, uint32_t flags) {
-    LOG_DEBUG("EventLoop", "CQE type=", req.type, " fd=", req.fd, " result=", result);
+void EventLoop::handleCqe(const net::UringRequest& req, int result, uint32_t flags,
+                           uint64_t rawData) {
+    (void)rawData;
+    (void)flags;
+
     switch (static_cast<net::UringEventType>(req.type)) {
         case net::UringEventType::ACCEPT: {
             if (result < 0) {
@@ -119,10 +129,10 @@ void EventLoop::handleCqe(const net::UringRequest& req, int result, uint32_t fla
             int clientFd = result;
             LOG_INFO("EventLoop", "New connection: fd=", clientFd);
 
-            // 设置非阻塞（io_uring 需要非阻塞 socket）
-            int flags = fcntl(clientFd, F_GETFL, 0);
-            if (flags >= 0) {
-                fcntl(clientFd, F_SETFL, flags | O_NONBLOCK);
+            // 设置非阻塞
+            int fl = fcntl(clientFd, F_GETFL, 0);
+            if (fl >= 0) {
+                fcntl(clientFd, F_SETFL, fl | O_NONBLOCK);
             }
 
             auto conn = std::make_unique<VlessConnection>(clientFd, uring_);
@@ -136,10 +146,10 @@ void EventLoop::handleCqe(const net::UringRequest& req, int result, uint32_t fla
         case net::UringEventType::WRITE: {
             auto* conn = findConnection(req.fd);
             if (conn) {
-                LOG_DEBUG("EventLoop", "Dispatching to connection for fd=", req.fd, " type=", (int)req.type);
-                conn->onIOComplete(req.fd, result, static_cast<net::UringEventType>(req.type));
+                conn->onIOComplete(req.fd, result,
+                                   static_cast<net::UringEventType>(req.type));
             } else {
-                LOG_DEBUG("EventLoop", "Orphan CQE: no connection for fd=", req.fd, " type=", (int)req.type);
+                LOG_DEBUG("EventLoop", "Orphan CQE: no connection for fd=", req.fd);
             }
             break;
         }
@@ -173,7 +183,6 @@ Connection* EventLoop::findConnection(int fd) {
         }
     }
 
-    LOG_DEBUG("EventLoop", "findConnection fd=", fd, " not found");
     return nullptr;
 }
 

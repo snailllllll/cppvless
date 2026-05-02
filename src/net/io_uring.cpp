@@ -242,7 +242,7 @@ void IoUring::processCompletions(const UringCallback& callback) {
         ++count;
         
         UringRequest req = UringRequest::fromUserData(cqe->user_data);
-        callback(req, cqe->res, cqe->flags);
+        callback(req, cqe->res, cqe->flags, cqe->user_data);
     }
     
     io_uring_cq_advance(ring_, count);
@@ -261,7 +261,7 @@ bool IoUring::runOnce(const UringCallback& callback) {
         ++count;
         
         UringRequest req = UringRequest::fromUserData(cqe->user_data);
-        callback(req, cqe->res, cqe->flags);
+        callback(req, cqe->res, cqe->flags, cqe->user_data);
     }
     
     io_uring_cq_advance(ring_, count);

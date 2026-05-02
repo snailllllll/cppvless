@@ -66,7 +66,7 @@ struct UringRequest {
 /**
  * @brief io_uring 事件回调
  */
-using UringCallback = std::function<void(const UringRequest& req, int result, uint32_t flags)>;
+using UringCallback = std::function<void(const UringRequest& req, int result, uint32_t flags, uint64_t userData)>;
 
 /**
  * @brief io_uring 异步 I/O 处理器

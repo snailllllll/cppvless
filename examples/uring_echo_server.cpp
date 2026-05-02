@@ -216,10 +216,10 @@ bool UringEchoServer::runOnce(const vmess::net::UringCallback& callback) {
     uring_->submitAndWait(1);
     
     // 处理完成事件
-    uring_->processCompletions([this, &callback](const vmess::net::UringRequest& req, int result, uint32_t flags) {
+    uring_->processCompletions([this, &callback](const vmess::net::UringRequest& req, int result, uint32_t flags, uint64_t userData) {
         handleCompletion(req, result, flags);
         if (callback) {
-            callback(req, result, flags);
+            callback(req, result, flags, userData);
         }
     });
     
@@ -228,7 +228,7 @@ bool UringEchoServer::runOnce(const vmess::net::UringCallback& callback) {
 
 void UringEchoServer::run() {
     while (running_) {
-        runOnce([](const vmess::net::UringRequest& req, int result, uint32_t flags) {
+        runOnce([](const vmess::net::UringRequest& req, int result, uint32_t flags, uint64_t) {
             // 默认空回调
         });
     }

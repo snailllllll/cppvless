@@ -2,6 +2,7 @@
 #define VMESS_SERVER_EVENT_LOOP_H
 
 #include "net/io_uring.h"
+#include "coro/uring_awaitable.h"
 #include "server/connection.h"
 
 #include <unordered_map>
@@ -12,30 +13,28 @@ namespace vmess {
 namespace server {
 
 /**
- * @brief 极致精简的事件循环
+ * @brief 事件循环（统一协程版本）
  *
  * 核心设计：
- * - 只认识 Connection 接口，不感知任何协议
- * - 每轮迭代：prepareIO -> submit -> onComplete -> cleanup
+ * - 协程上下文的 CQE 由 CoroutineRegistry 直接 resume
+ * - 握手阶段的 recv CQE 仍由 Connection::onIOComplete 处理
+ * - Accept 仍由旧式 UringRequest 处理
  */
 class EventLoop {
 public:
     explicit EventLoop(unsigned int entries = 2048);
     ~EventLoop() = default;
 
-    // 禁用拷贝
     EventLoop(const EventLoop&) = delete;
     EventLoop& operator=(const EventLoop&) = delete;
 
-    // 启动事件循环（阻塞）
     void run(uint16_t listenPort);
-
-    // 停止事件循环
     void stop();
 
 private:
     void acceptNewConnection();
-    void handleCqe(const net::UringRequest& req, int result, uint32_t flags);
+    void handleCqe(const net::UringRequest& req, int result, uint32_t flags,
+                   uint64_t rawData);
     void cleanupClosedConnections();
     Connection* findConnection(int fd);
 
