@@ -3,10 +3,7 @@
 
 #include "net/io_uring.h"
 #include "net/socket.h"
-import std;
-
-// 引入用到的 C 库函数（import std; 把它们放在 std:: 命名空间）
-using std::memset;
+#include <cstring>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>

@@ -1,18 +1,18 @@
 cmake_minimum_required(VERSION 3.20)
 project(vmess CXX)
 
-# 设置C++标准
+# 使用 C++20（不需要模块支持）
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # 编译选项
 add_compile_options(-Wall -Wextra -Wpedantic)
-add_compile_options(-fcoroutines)  # 启用C++20协程支持
+add_compile_options(-fcoroutines)  # GCC 需要显式启用 C++20 协程
 
 # 构建类型
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Debug)
+    set(CMAKE_BUILD_TYPE Release)
 endif()
 
 # 包含目录
@@ -21,6 +21,7 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 # 子目录
 add_subdirectory(src)
 add_subdirectory(tests)
+add_subdirectory(examples)
 
 # 打印配置信息
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
