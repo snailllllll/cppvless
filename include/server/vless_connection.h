@@ -1,7 +1,6 @@
 #ifndef VMESS_SERVER_VLESS_CONNECTION_H
 #define VMESS_SERVER_VLESS_CONNECTION_H
 
-#include "server/connection.h"
 #include "coro/buffered_stream.h"
 #include "coro/task.h"
 #include "coro/uring_awaitable.h"
@@ -21,23 +20,20 @@ namespace server {
  *   - clientTask_: 握手 + client → target 转发
  *   - targetTask_: target → client 转发
  * 
- * 主循环通过 CoroutineRegistry resume 对应协程，
- * 不再需要 State 枚举和 prepareIO/onIOComplete 回调对。
+ * 所有 I/O（包括握手）都通过 co_await AsyncRecv/AsyncSend 完成，
+ * 不再需要 prepareIO/onIOComplete 回调对。
  */
-class VlessConnection : public Connection {
+class VlessConnection {
 public:
     VlessConnection(int clientFd, net::IoUring& uring);
-    ~VlessConnection() override;
+    ~VlessConnection();
 
-    // ── Connection 接口 ──
+    /// 启动 clientTask 协程（由 EventLoop 在新连接时调用）
+    void start();
 
-    void prepareIO(net::IoUring& uring) override;
-    void onIOComplete(int fd, int result, net::UringEventType type) override;
-    bool isClosed() const override;
-    int primaryFd() const override;
-    bool hasFd(int fd) const override;
-    bool needsPrepare() const override { return needsPrepare_; }
-    void clearNeedsPrepare() override { needsPrepare_ = false; }
+    bool isClosed() const { return closed_; }
+    int primaryFd() const { return clientFd_; }
+    bool hasFd(int fd) const { return fd == clientFd_ || fd == targetFd_; }
 
 private:
     // ── 协程 ──
@@ -58,7 +54,6 @@ private:
     void startTargetTask(int targetFd);
 
     // ── 通用 ──
-    void close();
     void doClose();
 
     // ── 成员 ──
@@ -66,14 +61,12 @@ private:
     int clientFd_;
     int targetFd_ = -1;
     net::IoUring& uring_;
-    coro::UringBufferedStream stream_;     // 仅握手阶段使用
+    coro::UringBufferedStream stream_;     // 握手阶段使用的缓冲流
 
     coro::Task<void> clientTask_;
     coro::Task<void> targetTask_;
 
-    bool started_ = false;
     bool closed_ = false;
-    bool needsPrepare_ = false;
 
     // 握手阶段目标地址（createTargetSocket 填充，connect 使用）
     struct sockaddr_in targetAddr_{};

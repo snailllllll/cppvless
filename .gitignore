@@ -28,6 +28,25 @@ third_party/
 *.log
 logs/
 
+#test
+tests/
+
 # Temporary files
 *.tmp
 *.bak
+
+# Test modules (C++20 modules experiment, not part of project)
+test_modules/
+
+# Tests - learning prototypes not in CMakeLists
+tests/test_channel.cpp
+tests/test_coroutine_scheduler.cpp
+tests/test_eventfd.cpp
+tests/test_io_uring.cpp
+tests/test_worker_workflow.cpp
+tests/test_worker_workflow_simple.cpp
+tests/uringtest.cpp
+tests/vless_client.go
+
+# Go compiled binaries
+tests/vless_client

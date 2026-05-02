@@ -1,7 +1,5 @@
 #include "server/event_loop.h"
-#include "server/vless_connection.h"
 #include "coro/uring_awaitable.h"
-#include "net/socket.h"
 #include "common/log.h"
 
 #include <sys/socket.h>
@@ -44,52 +42,33 @@ void EventLoop::run(uint16_t listenPort) {
     int flags = fcntl(listenFd_, F_GETFL, 0);
     fcntl(listenFd_, F_SETFL, flags | O_NONBLOCK);
 
-    acceptNewConnection();
-
     running_ = true;
     LOG_INFO("EventLoop", "Server listening on port ", listenPort);
 
-    while (running_) {
-        // 1. 让所有连接准备 I/O（主要是握手阶段的 recv）
-        for (auto& [fd, conn] : connections_) {
-            conn->prepareIO(uring_);
-        }
+    // 启动 Accept 协程
+    acceptTask_ = acceptLoop();
+    if (!acceptTask_.done()) {
+        acceptTask_.h.resume();
+    }
 
-        // 2. 提交并等待完成
+    // 主事件循环
+    while (running_) {
         uring_.submitAndWait(1);
 
-        // 3. 处理完成事件
-        uring_.processCompletions([this](const net::UringRequest& req,
-                                          int result, uint32_t flags,
-                                          uint64_t userData) {
+        // 处理完成事件：全部走协程路径
+        uring_.processCompletions([](const net::UringRequest& /*req*/,
+                                      int result, uint32_t /*flags*/,
+                                      uint64_t userData) {
             if (coro::isCoroutineUserData(userData)) {
-                // 协程上下文：直接通过 CoroutineRegistry resume
                 int fd = coro::userDataFd(userData);
                 auto type = coro::userDataType(userData);
                 LOG_DEBUG("EventLoop", "Coroutine CQE: fd=", fd,
                           " type=", static_cast<int>(type), " result=", result);
                 coro::CoroutineRegistry::instance().takeAndResume(fd, type, result);
-            } else {
-                // 旧式请求：交给 handleCqe 处理
-                handleCqe(req, result, flags, userData);
             }
+            // 旧式 CQE 不再存在，忽略
         });
 
-        // 4. 状态变化的连接需要重新 prepareIO
-        bool hasNewIO = false;
-        for (auto& [fd, conn] : connections_) {
-            if (conn->needsPrepare()) {
-                conn->prepareIO(uring_);
-                conn->clearNeedsPrepare();
-                hasNewIO = true;
-            }
-        }
-
-        if (hasNewIO) {
-            uring_.submitAll();
-        }
-
-        // 5. 清理已关闭的连接
         cleanupClosedConnections();
     }
 
@@ -104,60 +83,32 @@ void EventLoop::stop() {
     running_ = false;
 }
 
-void EventLoop::acceptNewConnection() {
-    static sockaddr_in clientAddr;
-    static socklen_t addrLen = sizeof(clientAddr);
+coro::Task<void> EventLoop::acceptLoop() {
+    LOG_INFO("EventLoop", "Accept loop started");
 
-    uring_.prepareAccept(listenFd_,
-                         reinterpret_cast<sockaddr*>(&clientAddr),
-                         &addrLen);
-}
+    while (running_) {
+        int clientFd = co_await coro::AsyncAccept(listenFd_, uring_);
 
-void EventLoop::handleCqe(const net::UringRequest& req, int result, uint32_t flags,
-                           uint64_t rawData) {
-    (void)rawData;
-    (void)flags;
-
-    switch (static_cast<net::UringEventType>(req.type)) {
-        case net::UringEventType::ACCEPT: {
-            if (result < 0) {
-                LOG_ERROR("EventLoop", "Accept failed: ", result);
-                acceptNewConnection();
-                return;
-            }
-
-            int clientFd = result;
-            LOG_INFO("EventLoop", "New connection: fd=", clientFd);
-
-            // 设置非阻塞
-            int fl = fcntl(clientFd, F_GETFL, 0);
-            if (fl >= 0) {
-                fcntl(clientFd, F_SETFL, fl | O_NONBLOCK);
-            }
-
-            auto conn = std::make_unique<VlessConnection>(clientFd, uring_);
-            connections_[clientFd] = std::move(conn);
-
-            acceptNewConnection();
-            break;
+        if (clientFd < 0) {
+            LOG_ERROR("EventLoop", "Accept failed: ", clientFd);
+            continue;
         }
 
-        case net::UringEventType::READ:
-        case net::UringEventType::WRITE: {
-            auto* conn = findConnection(req.fd);
-            if (conn) {
-                conn->onIOComplete(req.fd, result,
-                                   static_cast<net::UringEventType>(req.type));
-            } else {
-                LOG_DEBUG("EventLoop", "Orphan CQE: no connection for fd=", req.fd);
-            }
-            break;
+        LOG_INFO("EventLoop", "New connection: fd=", clientFd);
+
+        // 设置非阻塞
+        int fl = fcntl(clientFd, F_GETFL, 0);
+        if (fl >= 0) {
+            fcntl(clientFd, F_SETFL, fl | O_NONBLOCK);
         }
 
-        default:
-            LOG_DEBUG("EventLoop", "Unhandled CQE type=", req.type);
-            break;
+        // 创建连接并启动
+        auto conn = std::make_unique<VlessConnection>(clientFd, uring_);
+        conn->start();
+        connections_[clientFd] = std::move(conn);
     }
+
+    LOG_INFO("EventLoop", "Accept loop ended");
 }
 
 void EventLoop::cleanupClosedConnections() {
@@ -169,21 +120,6 @@ void EventLoop::cleanupClosedConnections() {
             ++it;
         }
     }
-}
-
-Connection* EventLoop::findConnection(int fd) {
-    auto it = connections_.find(fd);
-    if (it != connections_.end()) {
-        return it->second.get();
-    }
-
-    for (auto& [_, conn] : connections_) {
-        if (conn->hasFd(fd)) {
-            return conn.get();
-        }
-    }
-
-    return nullptr;
 }
 
 } // namespace server

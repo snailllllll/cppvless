@@ -99,7 +99,7 @@ private:
     /**
      * @brief 处理完成事件
      */
-    void handleCompletion(const vmess::net::UringRequest& req, int result, uint32_t flags);
+    void handleCompletion(const vmess::net::UringRequest& req, int result, uint32_t flags, uint64_t userData);
     
     /**
      * @brief 处理 accept 完成
@@ -217,7 +217,7 @@ bool UringEchoServer::runOnce(const vmess::net::UringCallback& callback) {
     
     // 处理完成事件
     uring_->processCompletions([this, &callback](const vmess::net::UringRequest& req, int result, uint32_t flags, uint64_t userData) {
-        handleCompletion(req, result, flags);
+        handleCompletion(req, result, flags, userData);
         if (callback) {
             callback(req, result, flags, userData);
         }
@@ -234,7 +234,7 @@ void UringEchoServer::run() {
     }
 }
 
-void UringEchoServer::handleCompletion(const vmess::net::UringRequest& req, int result, uint32_t flags) {
+void UringEchoServer::handleCompletion(const vmess::net::UringRequest& req, int result, uint32_t flags, uint64_t /*userData*/) {
     switch ((vmess::net::UringEventType)req.type) {
         case vmess::net::UringEventType::ACCEPT: {
             if (result >= 0) {

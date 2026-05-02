@@ -18,7 +18,7 @@ namespace vmess {
 namespace server {
 
 VlessConnection::VlessConnection(int clientFd, net::IoUring& uring)
-    : clientFd_(clientFd), uring_(uring), stream_(clientFd) {}
+    : clientFd_(clientFd), uring_(uring), stream_(clientFd, uring) {}
 
 VlessConnection::~VlessConnection() {
     // 先清除 CoroutineRegistry 中所有相关的注册
@@ -36,70 +36,13 @@ VlessConnection::~VlessConnection() {
     }
 }
 
-// ── Connection 接口 ──
-
-void VlessConnection::prepareIO(net::IoUring& uring) {
-    (void)uring;
-
+void VlessConnection::start() {
     if (closed_) return;
-
-    // 首次调用：启动 clientTask 协程
-    if (!started_) {
-        started_ = true;
-        clientTask_ = clientTask();
-        if (!clientTask_.done()) {
-            clientTask_.h.resume();
-        }
+    clientTask_ = clientTask();
+    // Task 的 initial_suspend 是 suspend_always，需要手动 resume 启动
+    if (!clientTask_.done()) {
+        clientTask_.h.resume();
     }
-
-    // 握手阶段：如果 stream 需要读取，提交 recv SQE
-    if (!closed_ && stream_.needsRead()) {
-        auto* ring = uring_.ring();
-        if (ring) {
-            struct io_uring_sqe* sqe = io_uring_get_sqe(ring);
-            if (sqe) {
-                io_uring_prep_recv(sqe, clientFd_, stream_.recvBuffer(),
-                                   coro::UringBufferedStream::recvBufferSize(), 0);
-
-                net::UringRequest req;
-                req.fd = clientFd_;
-                req.type = static_cast<uint16_t>(net::UringEventType::READ);
-                req.bid = 0;
-                sqe->user_data = req.toUserData();
-            }
-        }
-        stream_.clearNeedRead();
-    }
-}
-
-void VlessConnection::onIOComplete(int fd, int result, net::UringEventType type) {
-    if (closed_) return;
-
-    // 握手阶段的 recv 完成：喂数据给 stream
-    if (fd == clientFd_ && type == net::UringEventType::READ) {
-        if (result > 0) {
-            stream_.feed(stream_.recvBuffer(), result);
-        } else {
-            LOG_INFO("VlessConnection", "fd=", clientFd_, " handshake recv error: ", result);
-            closed_ = true;
-        }
-        return;
-    }
-
-    LOG_DEBUG("VlessConnection", "fd=", clientFd_, " unexpected onIOComplete: fd=", fd,
-              " type=", static_cast<int>(type), " result=", result);
-}
-
-bool VlessConnection::isClosed() const {
-    return closed_;
-}
-
-int VlessConnection::primaryFd() const {
-    return clientFd_;
-}
-
-bool VlessConnection::hasFd(int fd) const {
-    return fd == clientFd_ || fd == targetFd_;
 }
 
 // ── 协程 ──
@@ -108,7 +51,7 @@ coro::Task<void> VlessConnection::clientTask() {
     LOG_DEBUG("VlessConnection", "fd=", clientFd_, " clientTask START");
 
     try {
-        // 1. 握手
+        // 1. 握手（纯协程：stream_.read 内部 co_await AsyncRecv）
         auto req = co_await processHandshake();
         LOG_INFO("VlessConnection", "fd=", clientFd_, " Handshake target=",
                  req.addressString(), ":", req.port);
@@ -223,7 +166,7 @@ coro::Task<proxy::vless::Request> VlessConnection::processHandshake() {
 
     auto remaining = stream_.drainRemaining();
     if (!remaining.empty()) {
-        handshakeRemaining_.assign(remaining.begin(), remaining.end());
+        handshakeRemaining_ = std::move(remaining);
     }
 
     co_return req;
@@ -272,7 +215,6 @@ int VlessConnection::createTargetSocket(const proxy::vless::Request& req) {
 
 void VlessConnection::startTargetTask(int targetFd) {
     targetTask_ = targetTask(targetFd);
-    needsPrepare_ = true;
 
     if (!targetTask_.done()) {
         targetTask_.h.resume();
@@ -280,11 +222,6 @@ void VlessConnection::startTargetTask(int targetFd) {
 }
 
 // ── 通用 ──
-
-void VlessConnection::close() {
-    if (closed_) return;
-    doClose();
-}
 
 void VlessConnection::doClose() {
     closed_ = true;

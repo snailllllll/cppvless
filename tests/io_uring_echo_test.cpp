@@ -98,7 +98,7 @@ private:
     /**
      * @brief 处理完成事件
      */
-    void handleCompletion(const UringRequest& req, int result, uint32_t flags);
+    void handleCompletion(const UringRequest& req, int result, uint32_t flags, uint64_t);
     
     /**
      * @brief 处理 accept 完成
@@ -215,10 +215,10 @@ bool UringEchoServer::runOnce(const UringCallback& callback) {
     uring_->submitAndWait(1);
     
     // 处理完成事件
-    uring_->processCompletions([this, &callback](const UringRequest& req, int result, uint32_t flags) {
-        handleCompletion(req, result, flags);
+    uring_->processCompletions([this, &callback](const UringRequest& req, int result, uint32_t flags, uint64_t userData) {
+        handleCompletion(req, result, flags, userData);
         if (callback) {
-            callback(req, result, flags);
+            callback(req, result, flags, userData);
         }
     });
     
@@ -227,13 +227,13 @@ bool UringEchoServer::runOnce(const UringCallback& callback) {
 
 void UringEchoServer::run() {
     while (running_) {
-        runOnce([](const UringRequest& req, int result, uint32_t flags) {
+        runOnce([](const UringRequest& req, int result, uint32_t flags, uint64_t) {
             // 默认空回调
         });
     }
 }
 
-void UringEchoServer::handleCompletion(const UringRequest& req, int result, uint32_t flags) {
+void UringEchoServer::handleCompletion(const UringRequest& req, int result, uint32_t flags, uint64_t) {
     switch ((UringEventType)req.type) {
         case UringEventType::ACCEPT: {
             if (result >= 0) {
@@ -373,7 +373,7 @@ void testBasicConnection() {
         // 运行事件循环
         while (g_running) {
             // 单次迭代
-            if (!server.runOnce([](const UringRequest& req, int result, uint32_t flags) {
+            if (!server.runOnce([](const UringRequest& req, int result, uint32_t flags, uint64_t) {
                 // 这个回调在 UringEchoServer::run() 内部处理
             })) {
                 this_thread::sleep_for(chrono::milliseconds(10));
@@ -433,7 +433,7 @@ void testEcho() {
         }
         
         while (g_running) {
-            server.runOnce([](const UringRequest& req, int result, uint32_t flags) {
+            server.runOnce([](const UringRequest& req, int result, uint32_t flags, uint64_t) {
                 // 回调在内部处理
             });
         }
@@ -506,7 +506,7 @@ void testLargeData() {
         }
         
         while (g_running) {
-            server.runOnce([](const UringRequest& req, int result, uint32_t flags) {
+            server.runOnce([](const UringRequest& req, int result, uint32_t flags, uint64_t) {
             });
         }
     });
@@ -575,7 +575,7 @@ void testMultiClient() {
         }
         
         while (g_running) {
-            server.runOnce([](const UringRequest& req, int result, uint32_t flags) {
+            server.runOnce([](const UringRequest& req, int result, uint32_t flags, uint64_t) {
             });
         }
     });
@@ -673,7 +673,7 @@ int main(int argc, char* argv[]) {
             if (server.start()) {
                 cout << "Server running. Press Ctrl+C to stop." << endl;
                 while (g_running) {
-                    server.runOnce([](const UringRequest& req, int result, uint32_t flags) {
+                    server.runOnce([](const UringRequest& req, int result, uint32_t flags, uint64_t) {
                     });
                 }
             }
