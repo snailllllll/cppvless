@@ -59,7 +59,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: vmess_server_binary
-          path: build/${{ env.BINARY_NAME }}
+          path: build/src/${{ env.BINARY_NAME }}
           retention-days: 1
 
   # ══════════════════════════════════════════════
