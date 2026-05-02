@@ -2,6 +2,7 @@
 #define VMESS_SERVER_VLESS_CONNECTION_H
 
 #include "coro/buffered_stream.h"
+#include "coro/async_stream.h"
 #include "coro/task.h"
 #include "coro/uring_awaitable.h"
 #include "proxy/vless/protocol.h"
@@ -14,14 +15,20 @@ namespace vmess {
 namespace server {
 
 /**
- * @brief VLESS 协议连接（统一协程版本）
+ * @brief VLESS 协议连接（Go-like 协程版本）
  * 
  * 核心设计：两个协程分别处理两个方向的 I/O
  *   - clientTask_: 握手 + client → target 转发
  *   - targetTask_: target → client 转发
  * 
- * 所有 I/O（包括握手）都通过 co_await AsyncRecv/AsyncSend 完成，
- * 不再需要 prepareIO/onIOComplete 回调对。
+ * 对标 Go Xray 的 task.Run 模式：
+ *   task.OnSuccess(postRequest, task.Close(serverWriter))
+ *   task.OnSuccess(getResponse, task.Close(writer))
+ * 
+ * 半关闭状态模型（参考 Go buf.Copy + task.Close）：
+ *   - clientReadDone_: client→target 方向 EOF → shutdown target 写端
+ *   - targetReadDone_: target→client 方向 EOF → shutdown client 写端
+ *   - 两者都 true → 连接完全关闭
  */
 class VlessConnection {
 public:
@@ -53,7 +60,7 @@ private:
     /// 通知 targetTask 启动
     void startTargetTask(int targetFd);
 
-    // ── 通用 ──
+    /// 完全关闭连接（释放所有资源）
     void doClose();
 
     // ── 成员 ──
@@ -66,7 +73,10 @@ private:
     coro::Task<void> clientTask_;
     coro::Task<void> targetTask_;
 
-    bool closed_ = false;
+    // ── 半关闭状态 ──
+    bool closed_ = false;            // 连接完全关闭
+    bool clientReadDone_ = false;    // client → target 方向读端 EOF
+    bool targetReadDone_ = false;    // target → client 方向读端 EOF
 
     // 握手阶段目标地址（createTargetSocket 填充，connect 使用）
     struct sockaddr_in targetAddr_{};

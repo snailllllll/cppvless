@@ -2,6 +2,7 @@
 #include "proxy/vless/decoder.h"
 #include "proxy/vless/protocol.h"
 #include "coro/uring_awaitable.h"
+#include "coro/async_stream.h"
 #include "common/log.h"
 
 #include <unistd.h>
@@ -84,7 +85,8 @@ coro::Task<void> VlessConnection::clientTask() {
         int sendResult = co_await coro::AsyncSend(clientFd_, uring_,
                                                    response.data(), response.size());
         if (sendResult < 0) {
-            LOG_ERROR("VlessConnection", "fd=", clientFd_, " send response failed: ", sendResult);
+            LOG_ERROR("VlessConnection", "fd=", clientFd_, " send response failed: ", sendResult,
+                      " (", strerror(-sendResult), ")");
             closed_ = true;
             co_return;
         }
@@ -96,39 +98,39 @@ coro::Task<void> VlessConnection::clientTask() {
 
         // 5. 转发握手阶段剩余数据
         if (!handshakeRemaining_.empty()) {
-            int fwdResult = co_await coro::AsyncSend(targetFd_, uring_,
-                                                      handshakeRemaining_.data(),
-                                                      handshakeRemaining_.size());
+            LOG_DEBUG("VlessConnection", "fd=", clientFd_, " Forwarding handshake remaining: ",
+                      handshakeRemaining_.size(), " bytes");
+
+            coro::AsyncStream targetStream(targetFd_, uring_);
+            int fwdResult = co_await targetStream.writeFull(handshakeRemaining_);
             if (fwdResult <= 0) {
-                LOG_WARN("VlessConnection", "fd=", clientFd_, " forward handshake remaining failed");
+                LOG_WARN("VlessConnection", "fd=", clientFd_, " forward handshake remaining failed: ", fwdResult);
                 closed_ = true;
                 co_return;
             }
-            LOG_DEBUG("VlessConnection", "fd=", clientFd_, " Forwarded handshake remaining: ",
-                      handshakeRemaining_.size(), " bytes");
             handshakeRemaining_.clear();
         }
 
-        // 6. client → target 转发循环
-        while (!closed_) {
-            auto data = co_await coro::AsyncRecv(clientFd_, uring_);
-            if (data.empty()) {
-                LOG_INFO("VlessConnection", "fd=", clientFd_, " client read EOF");
-                break;
-            }
-            int sent = co_await coro::AsyncSend(targetFd_, uring_,
-                                                 data.data(), data.size());
-            if (sent <= 0) {
-                LOG_INFO("VlessConnection", "fd=", clientFd_, " send to target failed: ", sent);
-                break;
-            }
-        }
+        // 6. client → target 转发（使用 copyStream，对标 Go buf.Copy）
+        coro::AsyncStream clientStream(clientFd_, uring_);
+        coro::AsyncStream targetStream(targetFd_, uring_);
+
+        bool normalEnd = co_await coro::copyStream(targetStream, clientStream, closed_);
+
+        clientReadDone_ = true;
+        LOG_INFO("VlessConnection", "fd=", clientFd_, " client→target ",
+                 (normalEnd ? "EOF (half-close)" : "interrupted"),
+                 " clientReadDone=", clientReadDone_, " targetReadDone=", targetReadDone_);
+
     } catch (const std::exception& e) {
         LOG_ERROR("VlessConnection", "fd=", clientFd_, " clientTask exception: ", e.what());
     }
 
-    // 通知另一个协程退出
-    closed_ = true;
+    // 如果两个方向都完成了，标记连接完全关闭
+    if (clientReadDone_ && targetReadDone_) {
+        closed_ = true;
+    }
+
     LOG_INFO("VlessConnection", "fd=", clientFd_, " clientTask END");
 }
 
@@ -136,25 +138,25 @@ coro::Task<void> VlessConnection::targetTask(int targetFd) {
     LOG_DEBUG("VlessConnection", "fd=", clientFd_, " targetTask START, targetFd=", targetFd);
 
     try {
-        while (!closed_) {
-            auto data = co_await coro::AsyncRecv(targetFd, uring_);
-            if (data.empty()) {
-                LOG_INFO("VlessConnection", "fd=", clientFd_, " target read EOF, targetFd=", targetFd);
-                break;
-            }
-            int sent = co_await coro::AsyncSend(clientFd_, uring_,
-                                                 data.data(), data.size());
-            if (sent <= 0) {
-                LOG_INFO("VlessConnection", "fd=", clientFd_, " send to client failed: ", sent);
-                break;
-            }
-        }
+        coro::AsyncStream targetStream(targetFd, uring_);
+        coro::AsyncStream clientStream(clientFd_, uring_);
+
+        bool normalEnd = co_await coro::copyStream(clientStream, targetStream, closed_);
+
+        targetReadDone_ = true;
+        LOG_INFO("VlessConnection", "fd=", clientFd_, " target→client ",
+                 (normalEnd ? "EOF (half-close)" : "interrupted"),
+                 " clientReadDone=", clientReadDone_, " targetReadDone=", targetReadDone_);
+
     } catch (const std::exception& e) {
         LOG_ERROR("VlessConnection", "fd=", clientFd_, " targetTask exception: ", e.what());
     }
 
-    // 通知另一个协程退出
-    closed_ = true;
+    // 如果两个方向都完成了，标记连接完全关闭
+    if (clientReadDone_ && targetReadDone_) {
+        closed_ = true;
+    }
+
     LOG_INFO("VlessConnection", "fd=", clientFd_, " targetTask END");
 }
 
@@ -167,6 +169,8 @@ coro::Task<proxy::vless::Request> VlessConnection::processHandshake() {
     auto remaining = stream_.drainRemaining();
     if (!remaining.empty()) {
         handshakeRemaining_ = std::move(remaining);
+        LOG_DEBUG("VlessConnection", "fd=", clientFd_, " handshake remaining: ",
+                  handshakeRemaining_.size(), " bytes");
     }
 
     co_return req;

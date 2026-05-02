@@ -40,15 +40,15 @@ public:
     Task<std::vector<uint8_t>> read(size_t need) {
         // 循环 recv 直到 buffer 充足
         while (available() < need) {
-            auto data = co_await AsyncRecv(fd_, uring_);
-            if (data.empty()) {
+            auto rr = co_await AsyncRecv(fd_, uring_);
+            if (rr.error() || rr.eof()) {
                 // EOF 或错误：返回已缓冲的部分数据
                 if (available() > 0) {
                     co_return consume(available());
                 }
                 co_return std::vector<uint8_t>{};
             }
-            buffer_.insert(buffer_.end(), data.begin(), data.end());
+            buffer_.insert(buffer_.end(), rr.data.begin(), rr.data.end());
         }
 
         co_return consume(need);

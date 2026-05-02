@@ -52,6 +52,28 @@ struct AsyncRecvResult {
     int result = 0;                  // CQE result
 };
 
+/**
+ * @brief AsyncRecv 返回的详细结果
+ * 
+ * 参考 Go: buf.Copy 中 EOF 视为正常结束，非 EOF 错误才返回 error
+ * 
+ * 用法:
+ *   auto rr = co_await AsyncRecv(fd, uring);
+ *   if (rr.eof())      → 对端关闭（正常结束，应半关闭）
+ *   if (rr.error())    → 异常错误（应强制中断）
+ *   if (rr.ok())       → 正常读取数据
+ */
+struct RecvResult {
+    std::vector<uint8_t> data;
+    int result = 0;                  // CQE result: 0=EOF, >0=bytes read, <0=-errno
+
+    bool eof() const { return result == 0; }
+    bool error() const { return result < 0; }
+    bool ok() const { return result > 0; }
+    explicit operator bool() const { return ok(); }
+    size_t size() const { return data.size(); }
+};
+
 struct AsyncWriteResult {
     int result = 0;                  // CQE result (send/connect)
 };
@@ -157,7 +179,7 @@ private:
  * @brief 异步 Recv
  * 
  * co_await AsyncRecv(fd, uring);
- * → 返回 std::vector<uint8_t>（空表示 EOF/错误）
+ * → 返回 RecvResult（可区分 EOF 和错误）
  * 
  * 关键：recv 缓冲区 buf_ 是协程帧上的局部变量，
  * send 不会与 recv 共用缓冲区，彻底消除缓冲区竞争。
@@ -193,8 +215,11 @@ public:
         sqe->user_data = makeCoroutineUserData(fd_, net::UringEventType::READ);
     }
 
-    std::vector<uint8_t> await_resume() {
-        return std::move(result_.data);
+    RecvResult await_resume() {
+        RecvResult rr;
+        rr.data = std::move(result_.data);
+        rr.result = result_.result;
+        return rr;
     }
 
 private:
@@ -352,6 +377,55 @@ private:
     struct sockaddr_in clientAddr_{};
     socklen_t addrLen_;
     AsyncAcceptResult result_;
+};
+
+/**
+ * @brief 异步 Shutdown（半关闭）
+ * 
+ * co_await AsyncShutdown(fd, uring, SHUT_WR);
+ * → 返回 int（0=成功, <0=错误）
+ * 
+ * 参考 Go: task.Close(writer) → 对端收到 FIN
+ * 半关闭 = 优雅通知对端"我不再发送数据"，但仍然可以接收
+ */
+class AsyncShutdown {
+public:
+    AsyncShutdown(int fd, net::IoUring& uring, int how = SHUT_WR)
+        : fd_(fd), uring_(uring), how_(how) {}
+
+    bool await_ready() const { return false; }
+
+    void await_suspend(std::coroutine_handle<> h) {
+        CoroutineRegistry::instance().registerAwaitable(
+            fd_, net::UringEventType::WRITE, &result_, h);
+
+        auto* ring = uring_.ring();
+        if (!ring) {
+            result_.result = -1;
+            h.resume();
+            return;
+        }
+
+        struct io_uring_sqe* sqe = io_uring_get_sqe(ring);
+        if (!sqe) {
+            result_.result = -1;
+            h.resume();
+            return;
+        }
+
+        io_uring_prep_shutdown(sqe, fd_, how_);
+        sqe->user_data = makeCoroutineUserData(fd_, net::UringEventType::WRITE);
+    }
+
+    int await_resume() {
+        return result_.result;
+    }
+
+private:
+    int fd_;
+    net::IoUring& uring_;
+    int how_;
+    AsyncWriteResult result_;
 };
 
 } // namespace coro
