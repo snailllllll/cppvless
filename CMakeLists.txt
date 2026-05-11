@@ -1,14 +1,20 @@
 cmake_minimum_required(VERSION 3.20)
-project(vmess CXX)
+project(vmess C CXX)
 
 # 使用 C++20（不需要模块支持）
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# C 标准（BLAKE3 C 源文件需要）
+set(CMAKE_C_STANDARD 11)
+
 # 编译选项
 add_compile_options(-Wall -Wextra -Wpedantic)
-add_compile_options(-fcoroutines)  # GCC 需要显式启用 C++20 协程
+add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fcoroutines>)  # GCC 需要显式启用 C++20 协程
+
+# 依赖
+find_package(OpenSSL REQUIRED)
 
 # 构建类型
 if(NOT CMAKE_BUILD_TYPE)

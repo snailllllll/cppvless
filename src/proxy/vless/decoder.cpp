@@ -32,8 +32,10 @@ coro::Task<Request> Decoder::decode(coro::UringBufferedStream& stream) {
         throw std::runtime_error("invalid vless uuid");
     }
 
-    // 3. 读取 addons 长度并跳过 (1B + M B)
-    co_await skipAddons(stream);
+    // 3. 读取 addons（解析 Flow 字段）
+    //    VLESS addons 格式: length(1B) + protobuf{Flow, Seed, ...}
+    //    如果 Flow 为 "xtls-rprx-vision"，数据流需要 Vision 加解密处理
+    co_await parseAddons(stream, req);
 
     // 4. 读取指令 (1B)
     auto cmdBytes = co_await stream.read(1);
@@ -72,17 +74,65 @@ std::array<uint8_t, 2> Decoder::encodeResponse(uint8_t version) {
     return {version, 0x00};
 }
 
-coro::Task<void> Decoder::skipAddons(coro::UringBufferedStream& stream) {
-    // 读取 addons 长度 (1B)
+coro::Task<void> Decoder::parseAddons(coro::UringBufferedStream& stream, Request& req) {
+    // VLESS addons 格式（参考 Xray-core proxy/vless/encoding/addons.go）:
+    //   length(1B) + protobuf(Addons{Flow, Seed, ...})
+    //
+    // Protobuf 编码（简化解析）：
+    //   field 1 (Flow): tag=0x0A, length-delimited → string
+    //   field 2 (Seed): tag=0x12, length-delimited → string
+    //
+    // 常见 Flow 值：
+    //   ""                        → 无 Flow，明文转发
+    //   "xtls-rprx-vision"        → Vision 流控（需加解密处理）
+
     auto lenBytes = co_await stream.read(1);
     uint8_t addonsLen = lenBytes[0];
 
-    // 如果 addonsLen > 0，跳过 addons 数据
-    if (addonsLen > 0) {
-        co_await stream.read(addonsLen);
+    if (addonsLen == 0) {
+        // 无 addons
+        co_return;
     }
 
-    co_return;
+    // 读取 addons protobuf 数据
+    auto addonsData = co_await stream.read(addonsLen);
+
+    // 简化 protobuf 解析：只提取 field 1 (Flow)
+    // protobuf 格式: tag(varint) + value
+    // tag = (field_number << 3) | wire_type
+    // field 1, wire type 2 (length-delimited) → tag = 0x0A
+    size_t pos = 0;
+    while (pos < addonsData.size()) {
+        uint8_t tag = addonsData[pos++];
+        uint8_t fieldNum = tag >> 3;
+        uint8_t wireType = tag & 0x07;
+
+        if (wireType == 2) {
+            // Length-delimited: 读取 varint 长度 + 数据
+            uint8_t len = addonsData[pos++];
+            if (pos + len > addonsData.size()) break;
+
+            if (fieldNum == 1) {
+                // Field 1 = Flow
+                req.flow = std::string(
+                    reinterpret_cast<const char*>(addonsData.data() + pos), len);
+            } else if (fieldNum == 3) {
+                // Field 3 = Encryption (Xray VLESS addons)
+                req.encryption = std::string(
+                    reinterpret_cast<const char*>(addonsData.data() + pos), len);
+            }
+            pos += len;
+        } else if (wireType == 0) {
+            // Varint: 跳过
+            while (pos < addonsData.size() && (addonsData[pos] & 0x80)) {
+                pos++;
+            }
+            if (pos < addonsData.size()) pos++;
+        } else {
+            // 不支持的 wire type，停止解析
+            break;
+        }
+    }
 }
 
 coro::Task<void> Decoder::readAddress(coro::UringBufferedStream& stream, Request& req) {

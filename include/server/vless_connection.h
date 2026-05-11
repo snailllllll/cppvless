@@ -6,10 +6,13 @@
 #include "coro/task.h"
 #include "coro/uring_awaitable.h"
 #include "proxy/vless/protocol.h"
+#include "proxy/vless/vision.h"
+#include "proxy/vless/encryption.h"
 #include "net/io_uring.h"
 
 #include <array>
 #include <cstdint>
+#include <memory>
 
 namespace vmess {
 namespace server {
@@ -51,6 +54,35 @@ private:
     /// 远端侧协程：target → client 转发
     coro::Task<void> targetTask(int targetFd);
 
+    // ── 协议协商 ──
+
+    /// 设置 Vision 模式（如果需要）
+    coro::Task<bool> setupVision(const proxy::vless::Request& req);
+
+    /// 设置 Encryption 模式（如果需要）：读取客户端公钥、生成服务端密钥对
+    coro::Task<bool> setupEncryption(const proxy::vless::Request& req);
+
+    // ── 连接建立 ──
+
+    /// 创建 target socket 并异步连接到目标服务器
+    coro::Task<bool> connectTarget(const proxy::vless::Request& req);
+
+    /// 发送 VLESS 响应头 +（若启用 Encryption）发送服务端公钥并计算共享密钥
+    coro::Task<bool> sendResponseAndKey(uint8_t version);
+
+    // ── 数据转发 ──
+
+    /// 转发握手阶段缓冲区中的剩余数据到 target
+    coro::Task<bool> forwardHandshakeRemaining();
+
+    /// Client → Target 中继（支持三种模式：普通 / Vision / Encryption）
+    coro::Task<bool> relayClientToTarget();
+
+    // ── 清理 ──
+
+    /// clientTask 结束后的统一清理逻辑
+    void finishClientTask();
+
     // ── 握手子流程 ──
     coro::Task<proxy::vless::Request> processHandshake();
 
@@ -83,6 +115,17 @@ private:
 
     // 握手阶段缓冲区中剩余数据
     std::vector<uint8_t> handshakeRemaining_;
+
+    // ── Vision (xtls-rprx-vision) 支持 ──
+    bool useVision_ = false;
+    std::shared_ptr<proxy::vless::VisionContext> visionCtx_;
+    std::unique_ptr<proxy::vless::VisionReader> visionReader_;
+    std::unique_ptr<proxy::vless::VisionWriter> visionWriter_;
+
+    // ── Encryption 支持 ──
+    bool useEncryption_ = false;
+    std::unique_ptr<proxy::vless::EncryptionSession> encryptionSession_;
+    std::vector<uint8_t> clientPublicKey_;  // 客户端 X25519 公钥（32字节）
 };
 
 } // namespace server

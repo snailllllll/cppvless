@@ -98,6 +98,16 @@ private:
  * @param src 源流
  * @param stop 停止标志（另一方向设置）
  * @return true 正常结束（EOF），false 异常中断
+ * 
+ * 参考 Xray 的关闭传播模型：
+ *   - 正常 EOF (readError+io.EOF) → shutdown dst 写端，传播半关闭
+ *   - 读端错误 (readError+其他)   → shutdown dst 写端，通知对端"不会再有数据"
+ *   - 写端错误 (writeError)       → shutdown src 读端（通过关闭 src fd 触发 EOF）
+ * 
+ * 关键设计：无论正常还是异常，都执行 shutdownWrite()。
+ * 原因：另一个方向的协程可能正阻塞在 recv 上等待数据，
+ * 如果不 shutdown，它会一直等下去，直到超时或对端主动关闭。
+ * shutdown SHUT_WR 会发送 FIN，让对端 recv 返回 0（EOF），从而优雅退出。
  */
 inline Task<bool> copyStream(AsyncStream& dst, AsyncStream& src, const bool& stop) {
     while (!stop) {
@@ -109,14 +119,19 @@ inline Task<bool> copyStream(AsyncStream& dst, AsyncStream& src, const bool& sto
             co_return true;
         }
         if (rr.error()) {
-            // 对标 Go: 非 EOF 错误 → common.Interrupt
+            // 对标 Go: readError → 仍然关闭 dst 写端
+            // 参考 Xray: IsReadError(err) → 对端写方向也该关闭
+            // 即使是 ECONNRESET 等异常，也要通知 dst 侧不再有数据到来
             LOG_WARN("copyStream", "src fd=", src.fd(), " read error: ", rr.result,
                      " (", strerror(-rr.result), ")");
+            co_await dst.shutdownWrite();
             co_return false;
         }
 
         int written = co_await dst.writeFull(rr.data);
         if (written <= 0) {
+            // 对标 Go: writeError → 关闭 src 读端
+            // 写入失败意味着 dst 侧已断开，src 侧也没必要继续读了
             LOG_WARN("copyStream", "dst fd=", dst.fd(), " write error: ", written);
             co_return false;
         }

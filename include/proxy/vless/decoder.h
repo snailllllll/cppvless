@@ -38,7 +38,7 @@ public:
 
 private:
     static coro::Task<std::array<uint8_t, 16>> readUUID(coro::UringBufferedStream& stream);
-    static coro::Task<void> skipAddons(coro::UringBufferedStream& stream);
+    static coro::Task<void> parseAddons(coro::UringBufferedStream& stream, Request& req);
     static coro::Task<void> readAddress(coro::UringBufferedStream& stream, Request& req);
 };
 

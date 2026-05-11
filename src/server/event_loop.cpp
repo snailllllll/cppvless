@@ -66,7 +66,6 @@ void EventLoop::run(uint16_t listenPort) {
                           " type=", static_cast<int>(type), " result=", result);
                 coro::CoroutineRegistry::instance().takeAndResume(fd, type, result);
             }
-            // 旧式 CQE 不再存在，忽略
         });
 
         cleanupClosedConnections();
