@@ -2,10 +2,9 @@
 #define VMESS_PROXY_VLESS_DECODER_H
 
 #include "proxy/vless/protocol.h"
+#include "proxy/vless/validator.h"
 #include "coro/buffered_stream.h"
 #include "coro/task.h"
-
-#include <optional>
 
 namespace vmess {
 namespace proxy {
@@ -27,7 +26,7 @@ public:
      * 使用方式：
      *   auto req = co_await Decoder::decode(stream);
      */
-    static coro::Task<Request> decode(coro::UringBufferedStream& stream);
+    static coro::Task<Request> decode(coro::UringBufferedStream& stream, const Validator& validator);
 
     /**
      * @brief 编码响应头
@@ -37,7 +36,6 @@ public:
     static std::array<uint8_t, 2> encodeResponse(uint8_t version);
 
 private:
-    static coro::Task<std::array<uint8_t, 16>> readUUID(coro::UringBufferedStream& stream);
     static coro::Task<void> parseAddons(coro::UringBufferedStream& stream, Request& req);
     static coro::Task<void> readAddress(coro::UringBufferedStream& stream, Request& req);
 };

@@ -10,6 +10,7 @@ target_link_libraries(io_uring PUBLIC uring)
 # VLESS 协议库
 add_library(vless_proxy STATIC
     proxy/vless/decoder.cpp
+    proxy/vless/validator.cpp
     proxy/vless/vision.cpp
     proxy/vless/encryption.cpp
     ../third_party/blake3/blake3_wrap.cpp

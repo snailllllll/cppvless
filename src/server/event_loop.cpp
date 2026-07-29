@@ -6,16 +6,14 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <errno.h>
-
-#include <cstring>
 
 namespace vmess {
 namespace server {
 
-EventLoop::EventLoop(unsigned int entries) : uring_(entries) {}
+EventLoop::EventLoop(const proxy::vless::Validator& validator, unsigned int entries)
+    : uring_(entries), validator_(validator) {}
 
-void EventLoop::run(uint16_t listenPort) {
+void EventLoop::run(uint16_t listenPort, bool enableReusePort) {
     // 创建监听 socket
     listenFd_ = socket(AF_INET, SOCK_STREAM, 0);
     if (listenFd_ < 0) {
@@ -24,6 +22,9 @@ void EventLoop::run(uint16_t listenPort) {
 
     int opt = 1;
     setsockopt(listenFd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    if (enableReusePort) {
+        setsockopt(listenFd_, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
+    }
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
@@ -64,6 +65,7 @@ void EventLoop::run(uint16_t listenPort) {
                 auto type = coro::userDataType(userData);
                 LOG_DEBUG("EventLoop", "Coroutine CQE: fd=", fd,
                           " type=", static_cast<int>(type), " result=", result);
+                //单例模式
                 coro::CoroutineRegistry::instance().takeAndResume(fd, type, result);
             }
         });
@@ -80,6 +82,11 @@ void EventLoop::run(uint16_t listenPort) {
 
 void EventLoop::stop() {
     running_ = false;
+    if (listenFd_ >= 0) {
+        ::shutdown(listenFd_, SHUT_RDWR);
+        ::close(listenFd_);
+        listenFd_ = -1;
+    }
 }
 
 coro::Task<void> EventLoop::acceptLoop() {
@@ -89,6 +96,9 @@ coro::Task<void> EventLoop::acceptLoop() {
         int clientFd = co_await coro::AsyncAccept(listenFd_, uring_);
 
         if (clientFd < 0) {
+            if (!running_) {
+                break;
+            }
             LOG_ERROR("EventLoop", "Accept failed: ", clientFd);
             continue;
         }
@@ -102,7 +112,7 @@ coro::Task<void> EventLoop::acceptLoop() {
         }
 
         // 创建连接并启动
-        auto conn = std::make_unique<VlessConnection>(clientFd, uring_);
+        auto conn = std::make_unique<VlessConnection>(clientFd, uring_, validator_);
         conn->start();
         connections_[clientFd] = std::move(conn);
     }

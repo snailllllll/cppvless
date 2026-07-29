@@ -13,14 +13,14 @@
 #include <netdb.h>
 #include <fcntl.h>
 
-#include <stdexcept>
 #include <cstring>
 
 namespace vmess {
 namespace server {
 
-VlessConnection::VlessConnection(int clientFd, net::IoUring& uring)
-    : clientFd_(clientFd), uring_(uring), stream_(clientFd, uring) {}
+VlessConnection::VlessConnection(int clientFd, net::IoUring& uring,
+                                 const proxy::vless::Validator& validator)
+    : clientFd_(clientFd), uring_(uring), validator_(validator), stream_(clientFd, uring) {}
 
 VlessConnection::~VlessConnection() {
     // 先清除 CoroutineRegistry 中所有相关的注册
@@ -60,11 +60,30 @@ coro::Task<void> VlessConnection::clientTask() {
                  " flow=\"", req.flow, "\"",
                  " encryption=\"", req.encryption, "\"",
                  " cmd=", static_cast<int>(req.command));
+        command_ = req.command;
 
-        // 2. 协议协商：Vision / Encryption
-        if (!co_await setupVision(req) || !co_await setupEncryption(req)) {
+        if (req.command == proxy::vless::Command::Mux ||
+            req.command == proxy::vless::Command::Rvs) {
+            LOG_WARN("VlessConnection", "fd=", clientFd_,
+                     " command not implemented yet, cmd=", static_cast<int>(req.command));
             closed_ = true;
             co_return;
+        }
+
+        if (req.command == proxy::vless::Command::UDP) {
+            // 先做 UDP 基础兼容，不与 Vision/Encryption 叠加，避免错语义。
+            if (!req.flow.empty() || !req.encryption.empty()) {
+                LOG_WARN("VlessConnection", "fd=", clientFd_,
+                         " UDP currently requires empty flow/encryption");
+                closed_ = true;
+                co_return;
+            }
+        } else {
+            // TCP: 协议协商 Vision / Encryption
+            if (!co_await setupVision(req) || !co_await setupEncryption(req)) {
+                closed_ = true;
+                co_return;
+            }
         }
 
         // 3. 连接目标服务器
@@ -82,14 +101,19 @@ coro::Task<void> VlessConnection::clientTask() {
         // 5. 启动 target → client 协程
         startTargetTask(targetFd_);
 
-        // 6. 转发握手阶段剩余数据
-        if (!co_await forwardHandshakeRemaining()) {
-            closed_ = true;
-            co_return;
+        bool normalEnd = true;
+        if (req.command == proxy::vless::Command::UDP) {
+            // UDP: 握手剩余字节属于首批 length-packet 数据，由 UDP 中继统一处理。
+            normalEnd = co_await relayUdpClientToTarget();
+        } else {
+            // TCP: 先转发握手阶段剩余数据，再进入流式中继
+            if (!co_await forwardHandshakeRemaining()) {
+                closed_ = true;
+                co_return;
+            }
+            normalEnd = co_await relayClientToTarget();
         }
 
-        // 7. client → target 中继
-        bool normalEnd = co_await relayClientToTarget();
         clientReadDone_ = true;
         LOG_INFO("VlessConnection", "fd=", clientFd_, " client→target ",
                  (normalEnd ? "EOF (half-close)" : "interrupted"),
@@ -173,7 +197,7 @@ coro::Task<bool> VlessConnection::connectTarget(const proxy::vless::Request& req
     int connectResult = co_await coro::AsyncConnect(
         targetFd, uring_,
         reinterpret_cast<const struct sockaddr*>(&targetAddr_),
-        sizeof(targetAddr_));
+        targetAddrLen_);
 
     if (connectResult < 0) {
         LOG_ERROR("VlessConnection", "fd=", clientFd_, " connect failed: ", connectResult,
@@ -347,6 +371,55 @@ coro::Task<bool> VlessConnection::relayClientToTarget() {
     co_return normalEnd;
 }
 
+coro::Task<bool> VlessConnection::relayUdpClientToTarget() {
+    coro::AsyncStream clientStream(clientFd_, uring_);
+    coro::AsyncStream targetStream(targetFd_, uring_);
+    bool normalEnd = true;
+
+    std::vector<uint8_t> pending = std::move(handshakeRemaining_);
+    handshakeRemaining_.clear();
+
+    while (!closed_) {
+        size_t offset = 0;
+        while (pending.size() - offset >= 2) {
+            uint16_t pktLen = (static_cast<uint16_t>(pending[offset]) << 8) |
+                              static_cast<uint16_t>(pending[offset + 1]);
+            if (pending.size() - offset < static_cast<size_t>(2 + pktLen)) {
+                break;
+            }
+            if (pktLen > 0) {
+                int written = co_await targetStream.writeFull(
+                    pending.data() + offset + 2, pktLen);
+                if (written <= 0) {
+                    normalEnd = false;
+                    co_return normalEnd;
+                }
+            }
+            offset += 2 + pktLen;
+        }
+
+        if (offset > 0) {
+            pending.erase(pending.begin(), pending.begin() + static_cast<std::ptrdiff_t>(offset));
+            continue;
+        }
+
+        auto rr = co_await clientStream.read();
+        if (rr.eof()) {
+            break;
+        }
+        if (rr.error()) {
+            LOG_WARN("VlessConnection", "fd=", clientFd_,
+                     " client read error in udp relay: ", rr.result);
+            normalEnd = false;
+            break;
+        }
+
+        pending.insert(pending.end(), rr.data.begin(), rr.data.end());
+    }
+
+    co_return normalEnd;
+}
+
 // ── 清理 ──
 
 void VlessConnection::finishClientTask() {
@@ -369,7 +442,10 @@ coro::Task<void> VlessConnection::targetTask(int targetFd) {
         coro::AsyncStream clientStream(clientFd_, uring_);
 
         bool normalEnd = true;
-        if (useEncryption_) {
+        if (command_ == proxy::vless::Command::UDP) {
+            co_await relayUdpTargetToClient();
+            normalEnd = true;
+        } else if (useEncryption_) {
             // Encryption 模式：读取 target 数据 → 加密 → 写入 client
             while (!closed_) {
                 auto rr = co_await targetStream.read();
@@ -469,11 +545,46 @@ coro::Task<void> VlessConnection::targetTask(int targetFd) {
     LOG_INFO("VlessConnection", "fd=", clientFd_, " targetTask END");
 }
 
+coro::Task<void> VlessConnection::relayUdpTargetToClient() {
+    coro::AsyncStream targetStream(targetFd_, uring_);
+    coro::AsyncStream clientStream(clientFd_, uring_);
+
+    while (!closed_) {
+        auto rr = co_await targetStream.read(65536);
+        if (rr.eof()) {
+            co_return;
+        }
+        if (rr.error()) {
+            LOG_WARN("VlessConnection", "fd=", clientFd_,
+                     " target read error in udp relay: ", rr.result);
+            co_return;
+        }
+
+        if (rr.data.size() > 0xFFFF) {
+            LOG_WARN("VlessConnection", "fd=", clientFd_,
+                     " udp datagram too large for vless length packet: ", rr.data.size());
+            continue;
+        }
+
+        std::vector<uint8_t> framed;
+        framed.reserve(2 + rr.data.size());
+        uint16_t len = static_cast<uint16_t>(rr.data.size());
+        framed.push_back(static_cast<uint8_t>((len >> 8) & 0xFF));
+        framed.push_back(static_cast<uint8_t>(len & 0xFF));
+        framed.insert(framed.end(), rr.data.begin(), rr.data.end());
+
+        int written = co_await clientStream.writeFull(framed);
+        if (written <= 0) {
+            co_return;
+        }
+    }
+}
+
 // ── 握手子流程 ──
 
 coro::Task<proxy::vless::Request> VlessConnection::processHandshake() {
     LOG_DEBUG("VlessConnection", "fd=", clientFd_, " processHandshake START");
-    auto req = co_await proxy::vless::Decoder::decode(stream_);
+    auto req = co_await proxy::vless::Decoder::decode(stream_, validator_);
 
     auto remaining = stream_.drainRemaining();
     if (!remaining.empty()) {
@@ -486,7 +597,62 @@ coro::Task<proxy::vless::Request> VlessConnection::processHandshake() {
 }
 
 int VlessConnection::createTargetSocket(const proxy::vless::Request& req) {
-    int targetFd = socket(AF_INET, SOCK_STREAM, 0);
+    std::memset(&targetAddr_, 0, sizeof(targetAddr_));
+    targetAddrLen_ = 0;
+
+    int family = AF_UNSPEC;
+    const bool udpMode = (req.command == proxy::vless::Command::UDP);
+    const int socketType = udpMode ? SOCK_DGRAM : SOCK_STREAM;
+    int targetFd = -1;
+
+    if (req.isIPv4()) {
+        auto* v4 = reinterpret_cast<sockaddr_in*>(&targetAddr_);
+        v4->sin_family = AF_INET;
+        v4->sin_port = htons(req.port);
+        auto& ip = std::get<std::array<uint8_t, 4>>(req.address);
+        std::memcpy(&v4->sin_addr, ip.data(), 4);
+        family = AF_INET;
+        targetAddrLen_ = sizeof(sockaddr_in);
+    } else if (req.isIPv6()) {
+        auto* v6 = reinterpret_cast<sockaddr_in6*>(&targetAddr_);
+        v6->sin6_family = AF_INET6;
+        v6->sin6_port = htons(req.port);
+        auto& ip = std::get<std::array<uint8_t, 16>>(req.address);
+        std::memcpy(&v6->sin6_addr, ip.data(), 16);
+        family = AF_INET6;
+        targetAddrLen_ = sizeof(sockaddr_in6);
+    } else if (req.isDomain()) {
+        auto& domain = std::get<std::string>(req.address);
+        addrinfo hints{};
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = socketType;
+        addrinfo* res = nullptr;
+        const std::string port = std::to_string(req.port);
+        if (getaddrinfo(domain.c_str(), port.c_str(), &hints, &res) != 0 || !res) {
+            LOG_ERROR("VlessConnection", "fd=", clientFd_, " getaddrinfo failed for: ", domain);
+            return -1;
+        }
+
+        const addrinfo* cur = res;
+        while (cur && cur->ai_family != AF_INET && cur->ai_family != AF_INET6) {
+            cur = cur->ai_next;
+        }
+        if (!cur) {
+            freeaddrinfo(res);
+            LOG_ERROR("VlessConnection", "fd=", clientFd_, " no supported ip for domain: ", domain);
+            return -1;
+        }
+
+        std::memcpy(&targetAddr_, cur->ai_addr, cur->ai_addrlen);
+        targetAddrLen_ = static_cast<socklen_t>(cur->ai_addrlen);
+        family = cur->ai_family;
+        freeaddrinfo(res);
+    } else {
+        LOG_ERROR("VlessConnection", "fd=", clientFd_, " unsupported request address type");
+        return -1;
+    }
+
+    targetFd = socket(family, socketType, 0);
     if (targetFd < 0) {
         LOG_ERROR("VlessConnection", "fd=", clientFd_, " socket() failed");
         return -1;
@@ -495,32 +661,6 @@ int VlessConnection::createTargetSocket(const proxy::vless::Request& req) {
     int flags = fcntl(targetFd, F_GETFL, 0);
     if (flags >= 0) {
         fcntl(targetFd, F_SETFL, flags | O_NONBLOCK);
-    }
-
-    memset(&targetAddr_, 0, sizeof(targetAddr_));
-    targetAddr_.sin_family = AF_INET;
-    targetAddr_.sin_port = htons(req.port);
-
-    if (req.isIPv4()) {
-        auto& ip = std::get<std::array<uint8_t, 4>>(req.address);
-        memcpy(&targetAddr_.sin_addr, ip.data(), 4);
-    } else if (req.isDomain()) {
-        auto& domain = std::get<std::string>(req.address);
-        addrinfo hints{};
-        hints.ai_family = AF_INET;
-        hints.ai_socktype = SOCK_STREAM;
-        addrinfo* res = nullptr;
-        if (getaddrinfo(domain.c_str(), nullptr, &hints, &res) != 0 || !res) {
-            LOG_ERROR("VlessConnection", "fd=", clientFd_, " getaddrinfo failed for: ", domain);
-            ::close(targetFd);
-            return -1;
-        }
-        targetAddr_.sin_addr = reinterpret_cast<sockaddr_in*>(res->ai_addr)->sin_addr;
-        freeaddrinfo(res);
-    } else {
-        LOG_ERROR("VlessConnection", "fd=", clientFd_, " IPv6 not supported yet");
-        ::close(targetFd);
-        return -1;
     }
 
     return targetFd;

@@ -2,8 +2,8 @@
 #define VMESS_SERVER_EVENT_LOOP_H
 
 #include "net/io_uring.h"
-#include "coro/uring_awaitable.h"
 #include "server/vless_connection.h"
+#include "proxy/vless/validator.h"
 
 #include <unordered_map>
 #include <memory>
@@ -22,13 +22,13 @@ namespace server {
  */
 class EventLoop {
 public:
-    explicit EventLoop(unsigned int entries = 2048);
+    explicit EventLoop(const proxy::vless::Validator& validator, unsigned int entries = 2048);
     ~EventLoop() = default;
 
     EventLoop(const EventLoop&) = delete;
     EventLoop& operator=(const EventLoop&) = delete;
 
-    void run(uint16_t listenPort);
+    void run(uint16_t listenPort, bool enableReusePort = false);
     void stop();
 
 private:
@@ -38,6 +38,7 @@ private:
     void cleanupClosedConnections();
 
     net::IoUring uring_;
+    const proxy::vless::Validator& validator_;
     std::unordered_map<int, std::unique_ptr<VlessConnection>> connections_;
     std::atomic<bool> running_{false};
     int listenFd_ = -1;

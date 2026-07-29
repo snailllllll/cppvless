@@ -2,7 +2,6 @@
 #define VMESS_CORO_URING_AWAITABLE_H
 
 #include "net/io_uring.h"
-#include "common/log.h"
 
 #include <coroutine>
 #include <cstdint>
@@ -99,7 +98,8 @@ public:
     };
 
     static CoroutineRegistry& instance() {
-        static CoroutineRegistry reg;
+        // 每个线程维护独立 registry，避免多线程下的并发读写和误 resume。
+        thread_local CoroutineRegistry reg;
         return reg;
     }
 

@@ -2,17 +2,16 @@
 #define VMESS_SERVER_VLESS_CONNECTION_H
 
 #include "coro/buffered_stream.h"
-#include "coro/async_stream.h"
 #include "coro/task.h"
-#include "coro/uring_awaitable.h"
 #include "proxy/vless/protocol.h"
 #include "proxy/vless/vision.h"
 #include "proxy/vless/encryption.h"
+#include "proxy/vless/validator.h"
 #include "net/io_uring.h"
 
-#include <array>
 #include <cstdint>
 #include <memory>
+#include <sys/socket.h>
 
 namespace vmess {
 namespace server {
@@ -35,7 +34,7 @@ namespace server {
  */
 class VlessConnection {
 public:
-    VlessConnection(int clientFd, net::IoUring& uring);
+    VlessConnection(int clientFd, net::IoUring& uring, const proxy::vless::Validator& validator);
     ~VlessConnection();
 
     /// 启动 clientTask 协程（由 EventLoop 在新连接时调用）
@@ -77,6 +76,10 @@ private:
 
     /// Client → Target 中继（支持三种模式：普通 / Vision / Encryption）
     coro::Task<bool> relayClientToTarget();
+    /// UDP: Client(length-packet) → Target(datagram)
+    coro::Task<bool> relayUdpClientToTarget();
+    /// UDP: Target(datagram) → Client(length-packet)
+    coro::Task<void> relayUdpTargetToClient();
 
     // ── 清理 ──
 
@@ -100,6 +103,7 @@ private:
     int clientFd_;
     int targetFd_ = -1;
     net::IoUring& uring_;
+    const proxy::vless::Validator& validator_;
     coro::UringBufferedStream stream_;     // 握手阶段使用的缓冲流
 
     coro::Task<void> clientTask_;
@@ -111,7 +115,8 @@ private:
     bool targetReadDone_ = false;    // target → client 方向读端 EOF
 
     // 握手阶段目标地址（createTargetSocket 填充，connect 使用）
-    struct sockaddr_in targetAddr_{};
+    struct sockaddr_storage targetAddr_{};
+    socklen_t targetAddrLen_ = 0;
 
     // 握手阶段缓冲区中剩余数据
     std::vector<uint8_t> handshakeRemaining_;
@@ -126,6 +131,7 @@ private:
     bool useEncryption_ = false;
     std::unique_ptr<proxy::vless::EncryptionSession> encryptionSession_;
     std::vector<uint8_t> clientPublicKey_;  // 客户端 X25519 公钥（32字节）
+    proxy::vless::Command command_ = proxy::vless::Command::TCP;
 };
 
 } // namespace server

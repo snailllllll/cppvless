@@ -5,6 +5,7 @@
 #include <array>
 #include <string>
 #include <variant>
+#include <vector>
 
 namespace vmess {
 namespace proxy {
@@ -25,7 +26,8 @@ enum class AddressType : uint8_t {
 enum class Command : uint8_t {
     TCP = 1,
     UDP = 2,
-    Mux = 3
+    Mux = 3,
+    Rvs = 4
 };
 
 /**
@@ -38,6 +40,7 @@ struct Request {
     uint16_t port = 0;
     std::string flow;                  // VLESS Flow 字段（如 "xtls-rprx-vision"）
     std::string encryption;            // VLESS Encryption 字段（如 "aes-256-gcm", "chacha20-poly1305"）
+    std::vector<uint8_t> seed;         // Addons.Seed（Xray proto field=2）
     std::variant<
         std::array<uint8_t, 4>,   // IPv4
         std::array<uint8_t, 16>,  // IPv6
