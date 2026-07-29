@@ -13,34 +13,11 @@ add_library(vless_proxy STATIC
     proxy/vless/validator.cpp
     proxy/vless/vision.cpp
     proxy/vless/encryption.cpp
-    ../third_party/blake3/blake3_wrap.cpp
-    ../third_party/blake3/blake3_c.c
-    ../third_party/blake3/blake3_dispatch.c
-    ../third_party/blake3/blake3_portable.c
-    ../third_party/blake3/blake3_sse2.c
-    ../third_party/blake3/blake3_sse41.c
-    ../third_party/blake3/blake3_avx2.c
-    ../third_party/blake3/blake3_avx512.c
 )
 target_include_directories(vless_proxy PUBLIC 
     ${PROJECT_SOURCE_DIR}/include
-    ${PROJECT_SOURCE_DIR}/third_party/blake3
 )
 target_link_libraries(vless_proxy PUBLIC OpenSSL::SSL OpenSSL::Crypto)
-
-# BLAKE3 SIMD 源文件编译选项
-set_source_files_properties(
-    ${PROJECT_SOURCE_DIR}/third_party/blake3/blake3_sse2.c
-    PROPERTIES COMPILE_FLAGS "-msse2")
-set_source_files_properties(
-    ${PROJECT_SOURCE_DIR}/third_party/blake3/blake3_sse41.c
-    PROPERTIES COMPILE_FLAGS "-msse4.1")
-set_source_files_properties(
-    ${PROJECT_SOURCE_DIR}/third_party/blake3/blake3_avx2.c
-    PROPERTIES COMPILE_FLAGS "-mavx2 -mbmi2")
-set_source_files_properties(
-    ${PROJECT_SOURCE_DIR}/third_party/blake3/blake3_avx512.c
-    PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512vl")
 
 # 服务器库
 add_library(vmess_server_lib STATIC

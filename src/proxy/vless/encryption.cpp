@@ -1,5 +1,4 @@
 #include "proxy/vless/encryption.h"
-#include "blake3.h"
 
 #include <openssl/evp.h>
 #include <openssl/ec.h>
@@ -12,6 +11,30 @@
 namespace vmess {
 namespace proxy {
 namespace vless {
+
+namespace {
+
+bool deriveKeySha256(const char* label,
+                     const uint8_t* secret,
+                     size_t secretLen,
+                     uint8_t out[32]) {
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if (!ctx) return false;
+
+    bool ok = EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) == 1 &&
+              EVP_DigestUpdate(ctx, label, std::strlen(label)) == 1 &&
+              EVP_DigestUpdate(ctx, secret, secretLen) == 1;
+
+    unsigned int outLen = 0;
+    if (ok) {
+        ok = EVP_DigestFinal_ex(ctx, out, &outLen) == 1 && outLen == 32;
+    }
+
+    EVP_MD_CTX_free(ctx);
+    return ok;
+}
+
+} // namespace
 
 // ── AES-256-GCM ─────────────────────────────────────────────────────────────
 
@@ -296,19 +319,11 @@ bool EncryptionSession::computeSharedSecret(const uint8_t* peerPublicKey) {
 }
 
 void EncryptionSession::deriveKeys(const uint8_t* sharedSecret) {
-    using namespace vmess::crypto;
-
-    // 派生 client → server 密钥
-    blake3_derive_key(
-        clientKey_.data(), 32,
-        "VLESS Encryption: client key",
-        sharedSecret, 32);
-
-    // 派生 server → client 密钥
-    blake3_derive_key(
-        serverKey_.data(), 32,
-        "VLESS Encryption: server key",
-        sharedSecret, 32);
+    // 使用 OpenSSL SHA-256 派生双向会话密钥，避免依赖外部 third_party/blake3。
+    if (!deriveKeySha256("VLESS Encryption: client key", sharedSecret, 32, clientKey_.data()) ||
+        !deriveKeySha256("VLESS Encryption: server key", sharedSecret, 32, serverKey_.data())) {
+        throw std::runtime_error("failed to derive session keys");
+    }
 
     // 创建 AEAD 加密器
     encryptCipher_ = AeadCipher::create(method_, clientKey_.data(), true);
