@@ -23,6 +23,7 @@ target_link_libraries(vless_proxy PUBLIC OpenSSL::SSL OpenSSL::Crypto)
 add_library(vmess_server_lib STATIC
     server/event_loop.cpp
     server/vless_connection.cpp
+    server/vless_connection_handshake.cpp
 )
 target_include_directories(vmess_server_lib PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(vmess_server_lib PUBLIC io_uring vless_proxy)
