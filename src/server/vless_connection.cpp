@@ -86,19 +86,19 @@ coro::Task<void> VlessConnection::clientTask() {
             }
         }
 
-        // 3. 连接目标服务器
-        if (!co_await connectTarget(req)) {
-            closed_ = true;
-            co_return;
-        }
-
-        // 4. 发送响应 + 密钥交换
+        // 对齐 Xray inbound：先写 VLESS response header，再出站建连。
+        // 否则 DNS/connect 变慢时，客户端会在等响应阶段 RST（ECONNRESET）。
         if (!co_await sendResponseAndKey(req.version)) {
             closed_ = true;
             co_return;
         }
 
-        // 5. 启动 target → client 协程
+        if (!co_await connectTarget(req)) {
+            closed_ = true;
+            co_return;
+        }
+
+        // 启动 target → client 协程
         startTargetTask(targetFd_);
 
         bool normalEnd = true;
