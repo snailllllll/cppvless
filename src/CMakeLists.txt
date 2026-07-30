@@ -25,6 +25,9 @@ add_library(vmess_server_lib STATIC
     server/vless_connection.cpp
     server/vless_connection_handshake.cpp
     server/vless_connection_connect.cpp
+    server/vless_connection_relay_tcp.cpp
+    server/vless_connection_relay_udp.cpp
+    server/vless_connection_target_task.cpp
 )
 target_include_directories(vmess_server_lib PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(vmess_server_lib PUBLIC io_uring vless_proxy)
