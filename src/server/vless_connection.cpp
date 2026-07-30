@@ -16,142 +16,159 @@ VlessConnection::VlessConnection(int clientFd, net::IoUring& uring,
     : clientFd_(clientFd), uring_(uring), validator_(validator), stream_(clientFd, uring) {}
 
 VlessConnection::~VlessConnection() {
-    // 先清除 CoroutineRegistry 中所有相关的注册
-    // 必须在 ~Task() 之前做，否则协程帧被销毁后 registry 中的 handle 变成悬空指针
-    auto& registry = coro::CoroutineRegistry::instance();
-    if (clientFd_ >= 0) {
-        registry.eraseAll(clientFd_);
-    }
-    if (targetFd_ >= 0) {
-        registry.eraseAll(targetFd_);
-    }
-
-    if (!closed_) {
-        doClose();
-    }
+    // 无论 closed_ 标记如何，析构时都必须释放 fd。
+    // 半关闭路径会先置 closed_=true，若此处跳过 doClose 会泄漏 fd，
+    // 最终触发 EMFILE，表现为“连一会儿就不正常”。
+    doClose();
 }
 
 void VlessConnection::start() {
     if (closed_) return;
     clientTask_ = clientTask();
-    // Task 的 initial_suspend 是 suspend_always，需要手动 resume 启动
     if (!clientTask_.done()) {
         clientTask_.h.resume();
     }
 }
 
-// ── 协程 ──
-
+/**
+ * 会话状态机主控：
+ *   Handshake -> Dispatch(TCP|UDP) -> Relay -> Cleanup
+ *
+ * 失败/未实现命令不在此处直接 closed_=true（若 targetTask 已启动会竞态析构）。
+ * 统一走 finishClientTask()，按是否已启动对端协程决定立即关闭或半关闭唤醒。
+ */
 coro::Task<void> VlessConnection::clientTask() {
     LOG_DEBUG("VlessConnection", "fd=", clientFd_, " clientTask START");
 
     try {
-        // 1. 握手（纯协程：stream_.read 内部 co_await AsyncRecv）
+        // Phase 1: Handshake
         auto req = co_await processHandshake();
+        command_ = req.command;
         LOG_INFO("VlessConnection", "fd=", clientFd_, " Handshake target=",
                  req.addressString(), ":", req.port,
                  " flow=\"", req.flow, "\"",
                  " encryption=\"", req.encryption, "\"",
                  " cmd=", static_cast<int>(req.command));
-        command_ = req.command;
 
-        if (req.command == proxy::vless::Command::Mux ||
-            req.command == proxy::vless::Command::Rvs) {
-            LOG_WARN("VlessConnection", "fd=", clientFd_,
-                     " command not implemented yet, cmd=", static_cast<int>(req.command));
-            closed_ = true;
-            co_return;
-        }
-
-        if (req.command == proxy::vless::Command::UDP) {
-            // 先做 UDP 基础兼容，不与 Vision/Encryption 叠加，避免错语义。
-            if (!req.flow.empty() || !req.encryption.empty()) {
+        // Phase 2: Dispatch
+        bool normalEnd = false;
+        switch (req.command) {
+            case proxy::vless::Command::TCP:
+                normalEnd = co_await runTcpSession(req);
+                break;
+            case proxy::vless::Command::UDP:
+                normalEnd = co_await runUdpSession(req);
+                break;
+            case proxy::vless::Command::Mux:
+            case proxy::vless::Command::Rvs:
                 LOG_WARN("VlessConnection", "fd=", clientFd_,
-                         " UDP currently requires empty flow/encryption");
-                closed_ = true;
-                co_return;
-            }
-        } else {
-            // TCP: 协议协商 Vision / Encryption
-            if (!co_await setupVision(req) || !co_await setupEncryption(req)) {
-                closed_ = true;
-                co_return;
-            }
+                         " command not implemented yet, cmd=", static_cast<int>(req.command));
+                break;
+            default:
+                LOG_WARN("VlessConnection", "fd=", clientFd_,
+                         " unknown command=", static_cast<int>(req.command));
+                break;
         }
 
-        // 对齐 Xray inbound：先写 VLESS response header，再出站建连。
-        // 否则 DNS/connect 变慢时，客户端会在等响应阶段 RST（ECONNRESET）。
-        if (!co_await sendResponseAndKey(req.version)) {
-            closed_ = true;
-            co_return;
-        }
-
-        if (!co_await connectTarget(req)) {
-            closed_ = true;
-            co_return;
-        }
-
-        // 启动 target → client 协程
-        startTargetTask(targetFd_);
-
-        bool normalEnd = true;
-        if (req.command == proxy::vless::Command::UDP) {
-            // UDP: 握手剩余字节属于首批 length-packet 数据，由 UDP 中继统一处理。
-            normalEnd = co_await relayUdpClientToTarget();
-        } else {
-            // TCP: 先转发握手阶段剩余数据，再进入流式中继
-            if (!co_await forwardHandshakeRemaining()) {
-                closed_ = true;
-                co_return;
-            }
-            normalEnd = co_await relayClientToTarget();
-        }
-
-        clientReadDone_ = true;
+        // Phase 3: Uplink done
         LOG_INFO("VlessConnection", "fd=", clientFd_, " client→target ",
                  (normalEnd ? "EOF (half-close)" : "interrupted"),
-                 " clientReadDone=", clientReadDone_, " targetReadDone=", targetReadDone_);
+                 " clientReadDone=", true, " targetReadDone=", targetReadDone_);
 
     } catch (const std::exception& e) {
         LOG_ERROR("VlessConnection", "fd=", clientFd_, " clientTask exception: ", e.what());
     }
 
-    clientReadDone_ = true;
+    // Phase 4: Cleanup
     finishClientTask();
 
     LOG_INFO("VlessConnection", "fd=", clientFd_, " clientTask END");
 }
 
-// ── 清理 ──
+/**
+ * TCP 会话状态机：
+ *   Negotiate(Vision/Encryption) -> Respond -> Connect -> Relay
+ *
+ * 响应先于出站建连，对齐 Xray inbound；避免慢 DNS/connect 导致客户端 RST。
+ */
+coro::Task<bool> VlessConnection::runTcpSession(const proxy::vless::Request& req) {
+    if (!co_await setupVision(req) || !co_await setupEncryption(req)) {
+        co_return false;
+    }
+
+    if (!co_await sendResponseAndKey(req.version)) {
+        co_return false;
+    }
+
+    if (!co_await connectTarget(req)) {
+        co_return false;
+    }
+
+    startTargetTask(targetFd_);
+
+    if (!co_await forwardHandshakeRemaining()) {
+        co_return false;
+    }
+
+    co_return co_await relayClientToTarget();
+}
+
+/**
+ * UDP 会话状态机：
+ *   Validate -> Respond -> Connect -> LengthPacketRelay
+ *
+ * 当前约束：不叠加 Vision / Encryption。
+ */
+coro::Task<bool> VlessConnection::runUdpSession(const proxy::vless::Request& req) {
+    if (!req.flow.empty() || !req.encryption.empty()) {
+        LOG_WARN("VlessConnection", "fd=", clientFd_,
+                 " UDP currently requires empty flow/encryption");
+        co_return false;
+    }
+
+    if (!co_await sendResponseAndKey(req.version)) {
+        co_return false;
+    }
+
+    if (!co_await connectTarget(req)) {
+        co_return false;
+    }
+
+    startTargetTask(targetFd_);
+    co_return co_await relayUdpClientToTarget();
+}
 
 void VlessConnection::finishClientTask() {
+    clientReadDone_ = true;
+
+    // 对端协程从未启动：本连接可以立刻回收。
+    if (!targetTaskStarted_) {
+        closed_ = true;
+        return;
+    }
+
+    // 对端仍在跑：shutdown 唤醒它，等两边都结束后再 closed_。
     if (!targetReadDone_ && targetFd_ >= 0) {
         LOG_DEBUG("VlessConnection", "fd=", clientFd_,
                   " interrupting target (shutdown SHUT_RDWR), targetFd=", targetFd_);
         ::shutdown(targetFd_, SHUT_RDWR);
+        return;
     }
 
-    if (clientReadDone_ && targetReadDone_) {
-        closed_ = true;
-    }
+    closed_ = true;
 }
 
 void VlessConnection::startTargetTask(int targetFd) {
+    targetTaskStarted_ = true;
     targetTask_ = targetTask(targetFd);
-
     if (!targetTask_.done()) {
         targetTask_.h.resume();
     }
 }
 
-// ── 通用 ──
-
 void VlessConnection::doClose() {
     closed_ = true;
 
-    LOG_INFO("VlessConnection", "fd=", clientFd_, " closing connection");
-
-    // 清除 CoroutineRegistry 中与这两个 fd 相关的所有注册
     auto& registry = coro::CoroutineRegistry::instance();
     if (clientFd_ >= 0) {
         registry.eraseAll(clientFd_);
@@ -165,6 +182,7 @@ void VlessConnection::doClose() {
         targetFd_ = -1;
     }
     if (clientFd_ >= 0) {
+        LOG_INFO("VlessConnection", "fd=", clientFd_, " closing connection");
         ::close(clientFd_);
         clientFd_ = -1;
     }

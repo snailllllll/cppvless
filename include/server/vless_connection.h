@@ -17,16 +17,15 @@ namespace vmess {
 namespace server {
 
 /**
- * @brief VLESS 协议连接（Go-like 协程版本）
- * 
- * 核心设计：两个协程分别处理两个方向的 I/O
- *   - clientTask_: 握手 + client → target 转发
- *   - targetTask_: target → client 转发
- * 
- * 对标 Go Xray 的 task.Run 模式：
- *   task.OnSuccess(postRequest, task.Close(serverWriter))
- *   task.OnSuccess(getResponse, task.Close(writer))
- * 
+ * @brief VLESS 协议连接（协程状态机）
+ *
+ * clientTask_ 是会话状态机主控：
+ *   Handshake -> Dispatch(TCP|UDP) -> Relay -> Cleanup
+ *
+ * 双向 I/O 由两个协程协作：
+ *   - clientTask_: 握手/建链 + client → target
+ *   - targetTask_: target → client
+ *
  * 半关闭状态模型（参考 Go buf.Copy + task.Close）：
  *   - clientReadDone_: client→target 方向 EOF → shutdown target 写端
  *   - targetReadDone_: target→client 方向 EOF → shutdown client 写端
@@ -45,10 +44,16 @@ public:
     bool hasFd(int fd) const { return fd == clientFd_ || fd == targetFd_; }
 
 private:
-    // ── 协程 ──
+    // ── 会话状态机 ──
 
-    /// 客户端侧协程：握手 + client → target 转发
+    /// 主控协程：Handshake → Dispatch → Relay → Cleanup
     coro::Task<void> clientTask();
+
+    /// TCP 会话：协商 → 响应 → 建链 → 双向中继（响应先于建连，对齐 Xray）
+    coro::Task<bool> runTcpSession(const proxy::vless::Request& req);
+
+    /// UDP 会话：响应 → 建链 → length-packet 中继（响应先于建连，对齐 Xray）
+    coro::Task<bool> runUdpSession(const proxy::vless::Request& req);
 
     /// 远端侧协程：target → client 转发
     coro::Task<void> targetTask(int targetFd);
@@ -110,9 +115,10 @@ private:
     coro::Task<void> targetTask_;
 
     // ── 半关闭状态 ──
-    bool closed_ = false;            // 连接完全关闭
+    bool closed_ = false;            // 连接完全关闭（可被 EventLoop 回收）
     bool clientReadDone_ = false;    // client → target 方向读端 EOF
     bool targetReadDone_ = false;    // target → client 方向读端 EOF
+    bool targetTaskStarted_ = false; // targetTask 是否已启动（决定能否立刻 closed_）
 
     // 握手阶段目标地址（createTargetSocket 填充，connect 使用）
     struct sockaddr_storage targetAddr_{};
