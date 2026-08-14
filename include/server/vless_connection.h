@@ -8,6 +8,7 @@
 #include "proxy/vless/encryption.h"
 #include "proxy/vless/validator.h"
 #include "net/io_uring.h"
+#include "server/connection.h"
 
 #include <cstdint>
 #include <memory>
@@ -31,17 +32,17 @@ namespace server {
  *   - targetReadDone_: target→client 方向 EOF → shutdown client 写端
  *   - 两者都 true → 连接完全关闭
  */
-class VlessConnection {
+class VlessConnection : public EventLoopConnection {
 public:
     VlessConnection(int clientFd, net::IoUring& uring, const proxy::vless::Validator& validator);
     ~VlessConnection();
 
     /// 启动 clientTask 协程（由 EventLoop 在新连接时调用）
-    void start();
+    void start() override;
 
-    bool isClosed() const { return closed_; }
-    int primaryFd() const { return clientFd_; }
-    bool hasFd(int fd) const { return fd == clientFd_ || fd == targetFd_; }
+    bool isClosed() const override { return closed_; }
+    int primaryFd() const override { return clientFd_; }
+    bool hasFd(int fd) const override { return fd == clientFd_ || fd == targetFd_; }
 
 private:
     // ── 会话状态机 ──

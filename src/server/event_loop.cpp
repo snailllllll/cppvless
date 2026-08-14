@@ -10,8 +10,8 @@
 namespace vmess {
 namespace server {
 
-EventLoop::EventLoop(const proxy::vless::Validator& validator, unsigned int entries)
-    : uring_(entries), validator_(validator) {}
+EventLoop::EventLoop(ConnectionFactory factory, unsigned int entries)
+    : uring_(entries), factory_(std::move(factory)) {}
 
 void EventLoop::run(uint16_t listenPort, bool enableReusePort) {
     // 创建监听 socket
@@ -111,8 +111,13 @@ coro::Task<void> EventLoop::acceptLoop() {
             fcntl(clientFd, F_SETFL, fl | O_NONBLOCK);
         }
 
-        // 创建连接并启动
-        auto conn = std::make_unique<VlessConnection>(clientFd, uring_, validator_);
+        // 通过工厂创建协议连接并启动
+        auto conn = factory_(clientFd, uring_);
+        if (!conn) {
+            LOG_ERROR("EventLoop", "factory returned null, closing fd=", clientFd);
+            ::close(clientFd);
+            continue;
+        }
         conn->start();
         connections_[clientFd] = std::move(conn);
     }

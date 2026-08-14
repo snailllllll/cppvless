@@ -8,6 +8,8 @@
 #include <cstring>
 #include <vector>
 #include <unordered_map>
+#include <sys/socket.h>
+#include <sys/uio.h>
 
 namespace vmess {
 namespace coro {
@@ -425,6 +427,130 @@ private:
     int fd_;
     net::IoUring& uring_;
     int how_;
+    AsyncWriteResult result_;
+};
+
+/**
+ * @brief 异步 RecvFrom（UDP 使用，可获取源地址）
+ *
+ * co_await AsyncRecvFrom(fd, uring);
+ * → 返回 AsyncRecvFromResult（数据 + 源地址）
+ */
+struct AsyncRecvFromResult {
+    RecvResult rr;
+    struct sockaddr_storage srcAddr {};
+    socklen_t srcAddrLen = 0;
+};
+
+class AsyncRecvFrom {
+public:
+    AsyncRecvFrom(int fd, net::IoUring& uring, size_t bufSize = 65536)
+        : fd_(fd), uring_(uring) {
+        recvResult_.buf.resize(bufSize);
+    }
+
+    bool await_ready() const { return false; }
+
+    void await_suspend(std::coroutine_handle<> h) {
+        CoroutineRegistry::instance().registerAwaitable(
+            fd_, net::UringEventType::READ, &recvResult_, h);
+
+        auto* ring = uring_.ring();
+        if (!ring) {
+            recvResult_.result = -1;
+            h.resume();
+            return;
+        }
+
+        struct io_uring_sqe* sqe = io_uring_get_sqe(ring);
+        if (!sqe) {
+            recvResult_.result = -1;
+            h.resume();
+            return;
+        }
+
+        // liburing 2.4 无 io_uring_prep_recvfrom，用 recvmsg 实现：
+        // 需要在协程帧（awaitable）上保存 msghdr/iovec，直到完成
+        iov_.iov_base = recvResult_.buf.data();
+        iov_.iov_len = recvResult_.buf.size();
+        msg_.msg_name = &srcAddr_;
+        msg_.msg_namelen = sizeof(srcAddr_);
+        msg_.msg_iov = &iov_;
+        msg_.msg_iovlen = 1;
+
+        io_uring_prep_recvmsg(sqe, fd_, &msg_, 0);
+        sqe->user_data = makeCoroutineUserData(fd_, net::UringEventType::READ);
+    }
+
+    AsyncRecvFromResult await_resume() {
+        AsyncRecvFromResult res;
+        res.rr.data = std::move(recvResult_.data);
+        res.rr.result = recvResult_.result;
+        res.srcAddrLen = msg_.msg_namelen;
+        res.srcAddr = srcAddr_;
+        return res;
+    }
+
+private:
+    int fd_;
+    net::IoUring& uring_;
+    AsyncRecvResult recvResult_;   // buf = 接收缓冲，data = 结果
+    struct sockaddr_storage srcAddr_ {};
+    struct iovec iov_ {};
+    struct msghdr msg_ {};
+};
+
+/**
+ * @brief 异步 SendTo（UDP 使用，指定目标地址）
+ *
+ * co_await AsyncSendTo(fd, uring, data, len, addr, addrLen);
+ * → 返回 int（发送结果，<=0 表示错误）
+ */
+class AsyncSendTo {
+public:
+    AsyncSendTo(int fd, net::IoUring& uring,
+                const void* data, size_t len,
+                const struct sockaddr* addr, socklen_t addrLen)
+        : fd_(fd), uring_(uring), addr_(addr), addrLen_(addrLen) {
+        buf_.assign(static_cast<const uint8_t*>(data),
+                    static_cast<const uint8_t*>(data) + len);
+    }
+
+    bool await_ready() const { return false; }
+
+    void await_suspend(std::coroutine_handle<> h) {
+        CoroutineRegistry::instance().registerAwaitable(
+            fd_, net::UringEventType::WRITE, &result_, h);
+
+        auto* ring = uring_.ring();
+        if (!ring) {
+            result_.result = -1;
+            h.resume();
+            return;
+        }
+
+        struct io_uring_sqe* sqe = io_uring_get_sqe(ring);
+        if (!sqe) {
+            result_.result = -1;
+            h.resume();
+            return;
+        }
+
+        io_uring_prep_sendto(sqe, fd_, buf_.data(), buf_.size(), 0,
+                             addr_, addrLen_);
+        sqe->user_data = makeCoroutineUserData(fd_, net::UringEventType::WRITE);
+    }
+
+    int await_resume() {
+        return result_.result;
+    }
+
+private:
+    int fd_;
+    net::IoUring& uring_;
+    const struct sockaddr* addr_;
+    socklen_t addrLen_;
+    std::vector<uint8_t> buf_;
     AsyncWriteResult result_;
 };
 

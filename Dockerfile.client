@@ -1,0 +1,14 @@
+# VLESS 客户端镜像（SOCKS5 本地代理）
+# 构建：先在本机/CI 编译出 vmess_client 二进制（build/src/vmess_client），再构建本镜像
+# 运行：必须 host 网络 + privileged（io_uring 需要，Docker 默认 seccomp 会拦截 io_uring_setup）
+FROM ubuntu:22.04
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    liburing2 \
+    && rm -rf /var/lib/apt/lists/*
+COPY vmess_client /usr/local/bin/vmess_client
+RUN chmod +x /usr/local/bin/vmess_client
+# 默认参数可通过 docker run 追加覆盖：
+#   --socks5-port 1080 --remote <server-host>:<port> --uuid <uuid>
+ENTRYPOINT ["/usr/local/bin/vmess_client"]
+CMD ["--socks5-port", "1080", "--remote", "127.0.0.1:443", "--log", "warn"]

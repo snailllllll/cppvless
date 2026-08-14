@@ -2,27 +2,33 @@
 #define VMESS_SERVER_EVENT_LOOP_H
 
 #include "net/io_uring.h"
-#include "server/vless_connection.h"
-#include "proxy/vless/validator.h"
+#include "server/connection.h"
+#include "coro/task.h"
 
-#include <unordered_map>
+#include <functional>
 #include <memory>
+#include <unordered_map>
 #include <atomic>
 
 namespace vmess {
 namespace server {
 
 /**
- * @brief 事件循环（纯协程版本）
+ * @brief 事件循环（纯协程版本，工厂模式）
  *
  * 核心设计：
  * - 所有 CQE 都通过 CoroutineRegistry resume 协程
  * - Accept 也走协程（co_await AsyncAccept）
- * - 不再有旧式 UringRequest 回调路径
+ * - 连接通过 ConnectionFactory 创建，因此服务端（VLESS）与
+ *   客户端（SOCKS5）可共用同一个事件循环
  */
 class EventLoop {
 public:
-    explicit EventLoop(const proxy::vless::Validator& validator, unsigned int entries = 2048);
+    /// 连接工厂：给定 accept 得到的 fd，创建对应的协议连接
+    using ConnectionFactory =
+        std::function<std::unique_ptr<EventLoopConnection>(int fd, net::IoUring&)>;
+
+    explicit EventLoop(ConnectionFactory factory, unsigned int entries = 2048);
     ~EventLoop() = default;
 
     EventLoop(const EventLoop&) = delete;
@@ -38,8 +44,8 @@ private:
     void cleanupClosedConnections();
 
     net::IoUring uring_;
-    const proxy::vless::Validator& validator_;
-    std::unordered_map<int, std::unique_ptr<VlessConnection>> connections_;
+    ConnectionFactory factory_;
+    std::unordered_map<int, std::unique_ptr<EventLoopConnection>> connections_;
     std::atomic<bool> running_{false};
     int listenFd_ = -1;
 

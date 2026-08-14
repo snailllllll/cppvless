@@ -1,4 +1,5 @@
 #include "server/event_loop.h"
+#include "server/vless_connection.h"
 #include "common/log.h"
 #include "proxy/vless/validator.h"
 
@@ -86,7 +87,12 @@ int main(int argc, char* argv[]) {
         std::vector<std::unique_ptr<vmess::server::EventLoop>> loops;
         loops.reserve(workerCount);
         for (unsigned int i = 0; i < workerCount; ++i) {
-            loops.push_back(std::make_unique<vmess::server::EventLoop>(validator));
+            // 工厂模式：每个 accept 的 fd 创建一个 VLESS 连接
+            loops.push_back(std::make_unique<vmess::server::EventLoop>(
+                [&validator](int clientFd, vmess::net::IoUring& uring) {
+                    return std::make_unique<vmess::server::VlessConnection>(
+                        clientFd, uring, validator);
+                }));
         }
 
         std::vector<vmess::server::EventLoop*> loopPtrs;
