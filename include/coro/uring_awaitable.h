@@ -505,6 +505,9 @@ private:
  *
  * co_await AsyncSendTo(fd, uring, data, len, addr, addrLen);
  * → 返回 int（发送结果，<=0 表示错误）
+ *
+ * 注意：使用 io_uring_prep_sendmsg 实现（liburing 2.1 起均可用），
+ * 不用 io_uring_prep_sendto（liburing 2.3 才引入，CI 的 22.04 镜像为 2.1）。
  */
 class AsyncSendTo {
 public:
@@ -536,8 +539,15 @@ public:
             return;
         }
 
-        io_uring_prep_sendto(sqe, fd_, buf_.data(), buf_.size(), 0,
-                             addr_, addrLen_);
+        // 需要把 msghdr/iovec 保存在协程帧（awaitable）上直到 sendmsg 完成
+        iov_.iov_base = buf_.data();
+        iov_.iov_len = buf_.size();
+        msg_.msg_name = const_cast<struct sockaddr*>(addr_);
+        msg_.msg_namelen = addrLen_;
+        msg_.msg_iov = &iov_;
+        msg_.msg_iovlen = 1;
+
+        io_uring_prep_sendmsg(sqe, fd_, &msg_, 0);
         sqe->user_data = makeCoroutineUserData(fd_, net::UringEventType::WRITE);
     }
 
@@ -551,6 +561,8 @@ private:
     const struct sockaddr* addr_;
     socklen_t addrLen_;
     std::vector<uint8_t> buf_;
+    struct iovec iov_ {};
+    struct msghdr msg_ {};
     AsyncWriteResult result_;
 };
 
