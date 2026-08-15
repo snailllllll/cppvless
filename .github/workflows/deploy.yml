@@ -132,6 +132,8 @@ jobs:
             docker rm vmess || true
 
             # 启动新容器（使用 host 网络模式）
+            #   - 1080:  明文 VLESS（保持旧行为）
+            #   - 8848:  内置 TLS（自签证书保底，--cert-dir 挂载宿主机目录复用）
             LOG_LEVEL="${{ github.event.inputs.log_level || 'info' }}"
             echo "日志等级: ${LOG_LEVEL}"
 
@@ -139,7 +141,10 @@ jobs:
               --network host \
               --privileged \
               --restart unless-stopped \
-              ${{ env.DOCKER_IMAGE }}:latest 1080 ${LOG_LEVEL}
+              -v /var/lib/vmess/certs:/var/lib/vmess/certs \
+              ${{ env.DOCKER_IMAGE }}:latest \
+              1080 ${LOG_LEVEL} \
+              --tls-port 8848 --cert-dir /var/lib/vmess/certs
 
             # 清理临时文件
             rm -rf /tmp/vmess_deploy /tmp/deploy.tar.gz
