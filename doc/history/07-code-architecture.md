@@ -1,3 +1,9 @@
+> **状态：已归档（历史设计）**
+> 归档日期：2026-08-15
+> 原因：早期模块蓝图（Config/Session/Scheduler 等组件当前并不存在）
+> 本文档描述项目早期设计，与当前实现不符，仅作历史参考。
+> 当前实现请读：doc/README.md（索引）+ doc/19-current-architecture.md（架构速览）。
+
 # 代码架构设计
 
 > 版本：v1.0 DRAFT

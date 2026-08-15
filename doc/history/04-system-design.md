@@ -1,3 +1,9 @@
+> **状态：已归档（历史设计）**
+> 归档日期：2026-08-15
+> 原因：VMess 系统设计（本项目是 VLESS）；std::execution/YAML 均未采用
+> 本文档描述项目早期设计，与当前实现不符，仅作历史参考。
+> 当前实现请读：doc/README.md（索引）+ doc/19-current-architecture.md（架构速览）。
+
 # VMess C++ 实现系统设计
 
 > 版本：v0.2 DRAFT

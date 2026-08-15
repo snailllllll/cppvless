@@ -8,6 +8,7 @@
 #include <cstring>
 #include <vector>
 #include <unordered_map>
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
 
@@ -23,7 +24,7 @@ struct AsyncAcceptResult;
 // ── SQE user_data 编码 ──
 
 /**
- * bit 63: 协程标志（1 = 协程上下文，0 = 旧式 UringRequest）
+ * bit 63: 协程标志（固定置 1，标识协程上下文）
  * bit 48-62: 事件类型
  * bit 0-47: fd
  */
@@ -31,10 +32,6 @@ inline uint64_t makeCoroutineUserData(int fd, net::UringEventType type) {
     return 0x8000000000000000ULL |
            (static_cast<uint64_t>(static_cast<int>(type)) << 48) |
            (static_cast<uint64_t>(fd) & 0xFFFFFFFFFFFF);
-}
-
-inline bool isCoroutineUserData(uint64_t userData) {
-    return (userData & 0x8000000000000000ULL) != 0;
 }
 
 inline int userDataFd(uint64_t userData) {

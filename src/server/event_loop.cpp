@@ -56,18 +56,15 @@ void EventLoop::run(uint16_t listenPort, bool enableReusePort) {
     while (running_) {
         uring_.submitAndWait(1);
 
-        // 处理完成事件：全部走协程路径
-        uring_.processCompletions([](const net::UringRequest& /*req*/,
-                                      int result, uint32_t /*flags*/,
+        // 处理完成事件：所有 user_data 均为协程编码，直接解码分发
+        uring_.processCompletions([](int result, uint32_t /*flags*/,
                                       uint64_t userData) {
-            if (coro::isCoroutineUserData(userData)) {
-                int fd = coro::userDataFd(userData);
-                auto type = coro::userDataType(userData);
-                LOG_DEBUG("EventLoop", "Coroutine CQE: fd=", fd,
-                          " type=", static_cast<int>(type), " result=", result);
-                //单例模式
-                coro::CoroutineRegistry::instance().takeAndResume(fd, type, result);
-            }
+            int fd = coro::userDataFd(userData);
+            auto type = coro::userDataType(userData);
+            LOG_DEBUG("EventLoop", "Coroutine CQE: fd=", fd,
+                      " type=", static_cast<int>(type), " result=", result);
+            //单例模式
+            coro::CoroutineRegistry::instance().takeAndResume(fd, type, result);
         });
 
         cleanupClosedConnections();
