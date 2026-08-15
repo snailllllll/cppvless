@@ -24,7 +24,7 @@
 ├─────────────────────────────────────────────────────────────┤
 │ 事件循环 server/EventLoop（accept + CQE 分发，工厂模式）      │
 ├─────────────────────────────────────────────────────────────┤
-│ 协程层   coro/（Task、Async* 原语、CoroutineRegistry）        │
+│ 协程层   coro/（Task、Async* 原语、UringOp + PendingUringOps）│
 ├─────────────────────────────────────────────────────────────┤
 │ 系统层   net/（io_uring 封装、socket 工具）                    │
 └─────────────────────────────────────────────────────────────┘
@@ -37,10 +37,12 @@
 - `co_await` 一个 `Async*` 原语 → 协程挂起，IO 完成时由事件循环 resume；
 - 通过 `Task::h.resume()` 手动启动（`start()` 时调一次），后续全部由 CQE 驱动。
 
-### 2.2 `CoroutineRegistry`（单例）—— 挂起/恢复的桥梁
+### 2.2 `UringOp` + `PendingUringOps` —— 挂起/恢复与取消的桥梁
 
-- 键：`(fd, UringEventType::READ/WRITE)`，值：awaitable 指针 + 协程句柄；
-- `co_await AsyncRecv(fd)` 时注册 `(fd, READ)`；CQE 到达 → `takeAndResume(fd, type, result)` → 找到条目、把结果写进 awaitable、resume 协程；
+- `UringOp`：操作上下文基类，`user_data` 直接存 `&op`（指针直分发，零查表），
+  CQE 到达 → `completeFromCqe(userData, res, flags)` → 调用 op 自带完成回调 → 写结果、resume 协程；
+- `PendingUringOps`（thread_local 单例）：按 fd 追踪挂起操作；连接关闭时
+  `cancelFd(fd)` 置空回调与句柄，迟到 CQE 被忽略，不会 resume 已销毁协程帧；
 - **同一 fd 同一类型同时只能有一个挂起操作**（这是单线程事件循环的约束，也是 UDP 多路复用需要 eventfd 队列的原因）。
 
 ### 2.3 常用协程原语（`include/coro/uring_awaitable.h`）
@@ -81,7 +83,7 @@ run(port):
   ├─ acceptTask_ = acceptLoop(); acceptTask_.h.resume()
   └─ 主循环 while(running):
        ├─ uring_.submitAndWait(1)
-       ├─ processCompletions: 每个 CQE → CoroutineRegistry::takeAndResume(fd, type, result)
+       ├─ processCompletions: 每个 CQE → UringOp::completeFromCqe(userData, res, flags)
        └─ cleanupClosedConnections(): 回收 isClosed() 的连接
 ```
 

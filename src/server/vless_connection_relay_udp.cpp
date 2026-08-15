@@ -6,8 +6,8 @@ namespace vmess {
 namespace server {
 
 coro::Task<bool> VlessConnection::relayUdpClientToTarget() {
-    coro::AsyncStream clientStream(clientFd_, uring_);
     coro::AsyncStream targetStream(targetFd_, uring_);
+    net::Stream& clientStream = *clientStream_;
     bool normalEnd = true;
 
     std::vector<uint8_t> pending = std::move(handshakeRemaining_);
@@ -56,7 +56,7 @@ coro::Task<bool> VlessConnection::relayUdpClientToTarget() {
 
 coro::Task<void> VlessConnection::relayUdpTargetToClient() {
     coro::AsyncStream targetStream(targetFd_, uring_);
-    coro::AsyncStream clientStream(clientFd_, uring_);
+    net::Stream& clientStream = *clientStream_;
 
     while (!closed_) {
         auto rr = co_await targetStream.read(65536);

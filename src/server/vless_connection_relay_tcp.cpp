@@ -54,8 +54,8 @@ coro::Task<bool> VlessConnection::forwardHandshakeRemaining() {
 }
 
 coro::Task<bool> VlessConnection::relayClientToTarget() {
-    coro::AsyncStream clientStream(clientFd_, uring_);
     coro::AsyncStream targetStream(targetFd_, uring_);
+    net::Stream& clientStream = *clientStream_;
     bool normalEnd = true;
 
     if (useEncryption_) {

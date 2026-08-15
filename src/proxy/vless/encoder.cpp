@@ -38,7 +38,7 @@ std::vector<uint8_t> Encoder::encodeResponse(uint8_t version) {
     return {version, 0x00};
 }
 
-coro::Task<bool> Encoder::decodeResponse(coro::UringBufferedStream& stream) {
+coro::Task<bool> Encoder::decodeResponse(coro::BufferedStream& stream) {
     auto data = co_await stream.read(2);
     if (data.size() != 2) {
         co_return false;

@@ -45,13 +45,13 @@ void Socks5UdpRelay::stop() {
     if (closed_) return;
     closed_ = true;
 
-    auto& registry = coro::CoroutineRegistry::instance();
+    auto& pending = coro::PendingUringOps::instance();
 
-    // 先移除所有注册表条目，再关闭 fd，避免 CQE 访问已释放的协程帧
+    // 先取消所有挂起操作，再关闭 fd，避免 CQE 访问已释放的协程帧
     for (auto& [key, session] : sessions_) {
         (void)key;
         if (session && session->remoteFd >= 0) {
-            registry.eraseAll(session->remoteFd);
+            pending.cancelFd(session->remoteFd);
             ::close(session->remoteFd);
             session->remoteFd = -1;
             session->alive = false;
@@ -59,12 +59,12 @@ void Socks5UdpRelay::stop() {
     }
 
     if (eventFd_ >= 0) {
-        registry.eraseAll(eventFd_);
+        pending.cancelFd(eventFd_);
         ::close(eventFd_);
         eventFd_ = -1;
     }
     if (udpFd_ >= 0) {
-        registry.eraseAll(udpFd_);
+        pending.cancelFd(udpFd_);
         ::close(udpFd_);
         udpFd_ = -1;
     }
@@ -181,7 +181,7 @@ coro::Task<void> Socks5UdpRelay::recvLoop() {
             // 关闭会话：outTask 会因 recv 错误被唤醒并自行退出
             session->alive = false;
             if (session->remoteFd >= 0) {
-                coro::CoroutineRegistry::instance().eraseAll(session->remoteFd);
+                coro::PendingUringOps::instance().cancelFd(session->remoteFd);
                 ::close(session->remoteFd);
                 session->remoteFd = -1;
             }
@@ -259,7 +259,7 @@ coro::Task<void> Socks5UdpRelay::sessionOutTask(Session* session) {
     // 会话结束：标记失效并关闭 remoteFd（不删除 map 条目，避免销毁正在运行的协程帧）
     session->alive = false;
     if (session->remoteFd >= 0) {
-        coro::CoroutineRegistry::instance().eraseAll(session->remoteFd);
+        coro::PendingUringOps::instance().cancelFd(session->remoteFd);
         ::close(session->remoteFd);
         session->remoteFd = -1;
     }

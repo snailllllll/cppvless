@@ -1,6 +1,7 @@
 #ifndef VMESS_SERVER_VLESS_CONNECTION_H
 #define VMESS_SERVER_VLESS_CONNECTION_H
 
+#include "coro/async_stream.h"
 #include "coro/buffered_stream.h"
 #include "coro/task.h"
 #include "proxy/vless/protocol.h"
@@ -8,6 +9,9 @@
 #include "proxy/vless/encryption.h"
 #include "proxy/vless/validator.h"
 #include "net/io_uring.h"
+#include "net/stream.h"
+#include "net/tls.h"
+#include "net/tls_stream.h"
 #include "server/connection.h"
 
 #include <cstdint>
@@ -34,7 +38,8 @@ namespace server {
  */
 class VlessConnection : public EventLoopConnection {
 public:
-    VlessConnection(int clientFd, net::IoUring& uring, const proxy::vless::Validator& validator);
+    VlessConnection(int clientFd, net::IoUring& uring, const proxy::vless::Validator& validator,
+                    SSL_CTX* tlsCtx = nullptr);
     ~VlessConnection();
 
     /// 启动 clientTask 协程（由 EventLoop 在新连接时调用）
@@ -110,7 +115,10 @@ private:
     int targetFd_ = -1;
     net::IoUring& uring_;
     const proxy::vless::Validator& validator_;
-    coro::UringBufferedStream stream_;     // 握手阶段使用的缓冲流
+    SSL_CTX* tlsCtx_ = nullptr;                 // TLS 上下文（配置了 --tls-port 时非空）
+    std::unique_ptr<coro::AsyncStream> rawStream_;  // 底层明文流（AsyncStream 实现）
+    std::unique_ptr<net::Stream> clientStream_; // 明文用 AsyncStream，TLS 用 TlsStream 包装 rawStream_
+    coro::UringBufferedStream stream_;     // 握手阶段使用的缓冲流（基于 clientStream_）
 
     coro::Task<void> clientTask_;
     coro::Task<void> targetTask_;

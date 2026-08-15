@@ -6,6 +6,7 @@
 #include "coro/buffered_stream.h"
 #include "coro/task.h"
 #include "net/io_uring.h"
+#include "net/stream.h"
 #include "server/connection.h"
 
 #include <cstdint>
@@ -73,7 +74,8 @@ private:
     int remoteFd_ = -1;
     net::IoUring& uring_;
     VlessClientConfig cfg_;
-    coro::UringBufferedStream stream_;     // 握手阶段使用的缓冲流
+    std::unique_ptr<net::Stream> appStream_;  // app 侧抽象流（阶段4 客户端 TLS 时换 TlsStream）
+    coro::UringBufferedStream stream_;        // 握手阶段使用的缓冲流（基于 appStream_）
 
     coro::Task<void> clientTask_;
     coro::Task<void> remoteTask_;

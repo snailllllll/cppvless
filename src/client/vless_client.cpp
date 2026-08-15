@@ -132,8 +132,8 @@ coro::Task<VlessClientHandshakeResult> vlessConnectAndHandshake(
         co_return result;
     }
 
-    // 4. 读取并校验响应头
-    coro::UringBufferedStream stream(fd, uring);
+    // 4. 读取并校验响应头（缓冲流基于 remoteStream 取数）
+    coro::UringBufferedStream stream(remoteStream);
     if (!co_await proxy::vless::Encoder::decodeResponse(stream)) {
         LOG_ERROR("VlessClient", "invalid vless response header from remote ",
                   cfg.remoteHost);

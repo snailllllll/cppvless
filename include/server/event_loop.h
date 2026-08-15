@@ -17,7 +17,7 @@ namespace server {
  * @brief 事件循环（纯协程版本，工厂模式）
  *
  * 核心设计：
- * - 所有 CQE 都通过 CoroutineRegistry resume 协程
+ * - 所有 CQE 都通过 UringOp 指针直分发 resume 协程
  * - Accept 也走协程（co_await AsyncAccept）
  * - 连接通过 ConnectionFactory 创建，因此服务端（VLESS）与
  *   客户端（SOCKS5）可共用同一个事件循环

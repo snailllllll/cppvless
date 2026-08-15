@@ -126,27 +126,28 @@ Task<void> myCoroutine() {
 }
 ```
 
-##### 2.2 `CoroutineRegistry` — 协程挂起注册表（核心桥接机制）
+##### 2.2 `UringOp` 指针直分发 + `PendingUringOps` — 协程挂起/取消机制（核心桥接机制）
 
 ```
 coro/uring_awaitable.h
 ```
 
-**单例模式**，管理 `fd + 事件类型 → (Awaitable指针, 协程句柄)` 的映射。
+与 cpp-http-server 收敛的**指针直分发**模型：SQE 的 `user_data` 直接存操作对象地址
+（`&op_`），CQE 到达时零查表，调用 op 自带的完成回调恢复协程。
+
+- `UringOp`：操作上下文基类（`onComplete` 函数指针 + 协程句柄 + fd），`completeFromCqe`
+  是事件循环收到 CQE 后的统一入口；
+- `RecvOp` / `WriteOp` / `AcceptOp`：各操作子类，自带 `static complete` 回调
+  （写结果 → 从 `PendingUringOps` 移除 → 置空回调 → resume 协程）；
+- `PendingUringOps`：**thread_local 单例**，按 fd 追踪进行中的操作；连接关闭时
+  `cancelFd(fd)` 置空回调与句柄，迟到的 CQE 被 `completeFromCqe` 直接忽略，
+  不会 resume 已销毁的协程帧。
 
 io_uring 主循环收到 CQE 后的桥接流程：
-1. 通过 `user_data` 识别是否为协程上下文（bit 63 = 1）
-2. 从 `user_data` 解码 `fd` 和 `UringEventType`
-3. 调用 `CoroutineRegistry::takeAndResume(fd, type, result)`
-4. 注册表取出 Awaitable 指针，设置结果
-5. 取出协程句柄，`resume()` 恢复协程
-
-协程 `user_data` 编码格式：
-```
-bit 63:    固定 1（协程标志）
-bit 48-62: 事件类型 (UringEventType)
-bit 0-47:  fd
-```
+1. `processCompletions` 回调直接拿到 `cqe->user_data`（操作对象地址）
+2. 调用 `UringOp::completeFromCqe(userData, result, flags)`
+3. 若 op 未被取消（`onComplete` 非空），调用其完成回调
+4. 回调写结果、移除追踪、`resume()` 恢复协程
 
 ##### 2.3 可等待对象（Awaitable）
 
@@ -264,7 +265,7 @@ struct Request {
 ##### 4.1 `EventLoop` — 事件循环
 
 核心调度器，纯协程版本：
-- 所有 CQE 都通过 `CoroutineRegistry` resume 协程
+- 所有 CQE 都通过 `UringOp` 指针直分发 resume 协程
 - Accept 也走协程（`co_await AsyncAccept`）
 - 不再有旧式回调/状态机路径
 
@@ -430,26 +431,25 @@ C 实现的 BLAKE3 哈希库，含：
                │ co_await                  │ resume()
                ▼                           │
 ┌──────────────────────────┐    ┌──────────▼────────────────┐
-│    AsyncRecv (Awaitable) │    │   CoroutineRegistry      │
-│                          │    │                           │
-│  await_suspend():        │    │  registerAwaitable():     │
-│  1. 注册到 Registry       │───►│    fd+type → {await, h}  │
+│    AsyncRecv (Awaitable) │    │   PendingUringOps        │
+│                          │    │   (thread_local 单例)     │
+│  await_suspend():        │    │                           │
+│  1. 登记到 PendingUringOps│───►│    fd → {op} 集合         │
 │  2. 获取 SQE             │    │                           │
-│  3. 填充 io_uring_prep_recv │  │  takeAndResume():        │
-│  4. 设置 user_data       │    │    查找 → set result →   │
-│     (协程编码格式)        │    │    resume 协程            │
+│  3. 填充 io_uring_prep_recv │  │  cancelFd(fd):           │
+│  4. sqe->user_data = &op_│    │    置空回调，防 UAF       │
 └──────────────┬───────────┘    └───────────▲───────────────┘
-               │ prepare SQE                │ takeAndResume
+               │ prepare SQE                │ completeFromCqe
                ▼                            │
 ┌──────────────────────────┐    ┌───────────┴───────────────┐
 │       IoUring            │    │       EventLoop            │
 │                          │    │  (主循环)                  │
 │  submitAndWait(1) ───────┼───►│                           │
 │                          │    │  processCompletions():    │
-│  processCompletions():   │◄───┤    解码 user_data         │
-│    遍历 CQE 队列         │    │    isCoroutineUserData?   │
-│    回调 (fd, type, res)  │────┤    → takeAndResume()     │
-│                          │    │                           │
+│  processCompletions():   │◄───┤    透传 (res, flags,      │
+│    遍历 CQE 队列         │    │    userData)              │
+│    回调 (res, flags, ud) │────┤    → UringOp::completeFromCqe
+│                          │    │    → op 完成回调 → resume │
 └──────────────────────────┘    └───────────────────────────┘
 ```
 
@@ -464,15 +464,16 @@ C 实现的 BLAKE3 哈希库，含：
     ├── await_ready() → false（总是挂起）
     │
     ├── await_suspend(handle):
-    │   ├── CoroutineRegistry::registerAwaitable(fd, READ, &result_, handle)
-    │   │   → 记录 {awaitable指针, 协程句柄} 到注册表
+    │   ├── op_.fd = fd, op_.handle = handle, op_.onComplete = &RecvOp::complete
+    │   ├── PendingUringOps::instance().add(&op_)
+    │   │   → 记录 {fd → op} 到追踪表
     │   │
     │   ├── io_uring_get_sqe(ring) → 获取 SQE
     │   │
-    │   ├── io_uring_prep_recv(sqe, fd, buf, bufSize, 0)
+    │   ├── io_uring_prep_recv(sqe, fd, op_.buf, bufSize, 0)
     │   │
-    │   └── sqe->user_data = makeCoroutineUserData(fd, READ)
-    │       → bit 63 = 1, bit 48-62 = READ, bit 0-47 = fd
+    │   └── sqe->user_data = reinterpret_cast<uint64_t>(&op_)
+    │       → 直接存操作对象指针（零查表）
     │
     └── 协程挂起，控制权返回调用者
         （如果是从 Task chain 调用，最终回到 EventLoop 主循环）
@@ -484,18 +485,17 @@ C 实现的 BLAKE3 哈希库，含：
     │
     └── uring_.processCompletions(callback):
         ├── io_uring_for_each_cqe(ring, head, cqe):
-        │   ├── 检查 cqe->user_data
-        │   │   isCoroutineUserData(user_data) → true (bit 63 = 1)
-        │   │
-        │   ├── 解码：fd = user_data_fd, type = user_data_type
-        │   │
-        │   └── CoroutineRegistry::takeAndResume(fd, type, cqe->res):
-        │       ├── 查找 entries_[key] → {awaitable指针, 协程句柄}
-        │       ├── 从注册表移除条目
-        │       ├── 设置结果：static_cast<AsyncRecvResult*>(awaitable)->result = cqeResult
-        │       │   如果 result > 0: 复制数据到 result.data
-        │       └── handle.resume() → 恢复协程
-        │
+        │   └── callback(cqe->res, cqe->flags, cqe->user_data)
+        │       └── UringOp::completeFromCqe(userData, res, flags):
+        │           ├── reinterpret_cast<UringOp*>(userData) → op
+        │           ├── if (op && op->onComplete):
+        │           │    → 调用 RecvOp::complete(op, res, flags):
+        │           │       ├── op->result = cqeResult
+        │           │       │    如果 result > 0: 复制数据到 op->data
+        │           │       ├── PendingUringOps::remove(op)
+        │           │       ├── op->onComplete = nullptr
+        │           │       └── handle.resume() → 恢复协程
+        │           └── 若 op 已被 cancelFd（onComplete == nullptr）→ 忽略
         └── io_uring_cq_advance(ring, count) → 标记 CQE 已消费
 
 [3] 协程恢复
@@ -584,7 +584,7 @@ vmess_server (可执行文件)
 |------|------|
 | **纯协程模型** | 所有 I/O（包括 Accept）都通过 `co_await` 完成，没有回调/状态机 |
 | **Go-like 设计** | 对标 Xray 的 `buf.Copy` + `task.Close` + 半关闭传播 |
-| **io_uring 原生** | 通过 `CoroutineRegistry` 实现 CQE → 协程恢复的桥接 |
+| **io_uring 原生** | 通过 `UringOp` 指针直分发 + `PendingUringOps` 实现 CQE → 协程恢复的桥接 |
 | **双协程连接** | 每个连接 `clientTask` + `targetTask` 独立处理两个方向 |
 | **三种转发** | 普通 VLESS / Vision (XTLS) / Encryption，根据请求头自动选择 |
 | **半关闭传播** | 一方 EOF → shutdown 另一端，双方完成才关闭连接 |

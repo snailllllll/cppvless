@@ -27,7 +27,7 @@ uint64_t decodeVarint(const std::vector<uint8_t>& bytes, size_t& pos) {
 
 } // namespace
 
-coro::Task<Request> Decoder::decode(coro::UringBufferedStream& stream, const Validator& validator) {
+coro::Task<Request> Decoder::decode(coro::BufferedStream& stream, const Validator& validator) {
     Request req;
     auto readExact = [&](size_t n, const char* err) -> coro::Task<std::vector<uint8_t>> {
         auto data = co_await stream.read(n);
@@ -99,7 +99,7 @@ std::array<uint8_t, 2> Decoder::encodeResponse(uint8_t version) {
     return {version, 0x00};
 }
 
-coro::Task<void> Decoder::parseAddons(coro::UringBufferedStream& stream, Request& req) {
+coro::Task<void> Decoder::parseAddons(coro::BufferedStream& stream, Request& req) {
     // VLESS addons 格式（参考 Xray-core proxy/vless/encoding/addons.go）:
     //   length(1B) + protobuf(Addons{Flow, Seed, ...})
     //
@@ -158,7 +158,7 @@ coro::Task<void> Decoder::parseAddons(coro::UringBufferedStream& stream, Request
     }
 }
 
-coro::Task<void> Decoder::readAddress(coro::UringBufferedStream& stream, Request& req) {
+coro::Task<void> Decoder::readAddress(coro::BufferedStream& stream, Request& req) {
     // 读取地址类型 (1B)
     auto typeBytes = co_await stream.read(1);
     if (typeBytes.size() != 1) {

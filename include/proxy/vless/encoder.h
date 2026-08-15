@@ -39,14 +39,14 @@ public:
 
     /**
      * @brief 从缓冲流中解码 VLESS 响应头（客户端方向）
-     * @param stream 与服务端连接的缓冲流
+     * @param stream 与服务端连接的缓冲流（抽象接口，明文/TLS 均可）
      * @return true 响应合法（version==0），false 非法
      *
      * 纯明文模式下服务端只返回 2 字节：version + addonsLen(0)。
      * 若将来启用 Encryption，服务端会在响应头后追加 32B 公钥，
      * 此处先按 addonsLen 跳过 addons 数据。
      */
-    static coro::Task<bool> decodeResponse(coro::UringBufferedStream& stream);
+    static coro::Task<bool> decodeResponse(coro::BufferedStream& stream);
 
     /**
      * @brief 将 IP 字节数组与端口构造为地址字节（内部使用）

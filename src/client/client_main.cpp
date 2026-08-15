@@ -32,6 +32,7 @@ void printUsage(const char* prog) {
               << "  --remote <host:port>   远端 VLESS 服务器地址 (default: 127.0.0.1:443)\n"
               << "  --uuid <uuid>          VLESS 用户 UUID (default: e3e740b0-2c3a-4b0e-9f1a-2c8f7d5e3a1b)\n"
               << "  --log <level>          日志级别: none|error|warn|info|debug (default: info)\n"
+              << "  --log-file <path>      日志落盘文件（异步日志追加写入；默认仅 stderr）\n"
               << "  --workers <n>          worker 数 (default: CPU 核数)\n"
               << std::endl;
 }
@@ -41,6 +42,7 @@ int main(int argc, char* argv[]) {
     std::string remoteAddr = "127.0.0.1:443";
     std::string uuidStr = "e3e740b0-2c3a-4b0e-9f1a-2c8f7d5e3a1b";
     std::string logLevel = "info";
+    std::string logFile;
     unsigned int workerCount = std::thread::hardware_concurrency();
     if (workerCount == 0) {
         workerCount = 1;
@@ -59,6 +61,8 @@ int main(int argc, char* argv[]) {
             uuidStr = next();
         } else if (arg == "--log") {
             logLevel = next();
+        } else if (arg == "--log-file") {
+            logFile = next();
         } else if (arg == "--workers") {
             workerCount = std::max(1, std::atoi(next().c_str()));
         } else if (arg == "-h" || arg == "--help") {
@@ -70,6 +74,15 @@ int main(int argc, char* argv[]) {
             return 1;
         }
     }
+
+    // 日志落盘：优先 --log-file，其次 VLESS_LOG_FILE 环境变量
+    if (logFile.empty()) {
+        const char* env = std::getenv("VLESS_LOG_FILE");
+        if (env && env[0] != '\0') {
+            logFile = env;
+        }
+    }
+    vmess::common::Logger::instance().setLogFile(logFile);
 
     vmess::common::setLogLevel(vmess::common::parseLogLevel(logLevel));
 

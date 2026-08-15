@@ -2,6 +2,7 @@
 #define VMESS_PROXY_VLESS_VALIDATOR_H
 
 #include <array>
+#include <cstdint>
 #include <string>
 #include <vector>
 

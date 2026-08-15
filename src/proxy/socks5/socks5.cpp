@@ -53,7 +53,7 @@ Address Address::fromHost(const std::string& host) {
 
 namespace {
 
-coro::Task<std::vector<uint8_t>> readExact(coro::UringBufferedStream& stream,
+coro::Task<std::vector<uint8_t>> readExact(coro::BufferedStream& stream,
                                            size_t n,
                                            const char* err) {
     auto data = co_await stream.read(n);
@@ -85,7 +85,7 @@ void writeAddrPort(std::vector<uint8_t>& out, const Address& addr, uint16_t port
 
 } // namespace
 
-coro::Task<bool> Parser::readGreeting(coro::UringBufferedStream& stream) {
+coro::Task<bool> Parser::readGreeting(coro::BufferedStream& stream) {
     auto verBytes = co_await readExact(stream, 1, "failed to read socks5 version");
     if (verBytes[0] != 0x05) {
         co_return false;
@@ -110,7 +110,7 @@ std::vector<uint8_t> Parser::encodeGreetingResponse() {
     return {0x05, 0x00};  // VER=5, METHOD=0 (no auth)
 }
 
-coro::Task<Request> Parser::readRequest(coro::UringBufferedStream& stream) {
+coro::Task<Request> Parser::readRequest(coro::BufferedStream& stream) {
     Request req;
 
     auto verBytes = co_await readExact(stream, 1, "failed to read socks5 request version");

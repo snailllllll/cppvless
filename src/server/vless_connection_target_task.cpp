@@ -13,7 +13,7 @@ coro::Task<void> VlessConnection::targetTask(int targetFd) {
 
     try {
         coro::AsyncStream targetStream(targetFd, uring_);
-        coro::AsyncStream clientStream(clientFd_, uring_);
+        net::Stream& clientStream = *clientStream_;
 
         bool normalEnd = true;
         if (command_ == proxy::vless::Command::UDP) {

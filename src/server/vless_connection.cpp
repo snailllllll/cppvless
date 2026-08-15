@@ -1,5 +1,6 @@
 #include "server/vless_connection.h"
 #include "proxy/vless/protocol.h"
+#include "coro/async_stream.h"
 #include "coro/uring_awaitable.h"
 #include "common/log.h"
 
@@ -12,8 +13,15 @@ namespace vmess {
 namespace server {
 
 VlessConnection::VlessConnection(int clientFd, net::IoUring& uring,
-                                 const proxy::vless::Validator& validator)
-    : clientFd_(clientFd), uring_(uring), validator_(validator), stream_(clientFd, uring) {}
+                                 const proxy::vless::Validator& validator,
+                                 SSL_CTX* tlsCtx)
+    : clientFd_(clientFd), uring_(uring), validator_(validator), tlsCtx_(tlsCtx),
+      rawStream_(std::make_unique<coro::AsyncStream>(clientFd, uring)),
+      clientStream_(tlsCtx_
+                        ? static_cast<net::Stream*>(
+                              new net::TlsStream(*rawStream_, tlsCtx_, true))
+                        : static_cast<net::Stream*>(rawStream_.get())),
+      stream_(*clientStream_) {}
 
 VlessConnection::~VlessConnection() {
     // 无论 closed_ 标记如何，析构时都必须释放 fd。
@@ -41,6 +49,17 @@ coro::Task<void> VlessConnection::clientTask() {
     LOG_DEBUG("VlessConnection", "fd=", clientFd_, " clientTask START");
 
     try {
+        // Phase 0: TLS 握手（配置了 --tls-port 时，TLS 层先于 VLESS 协议）
+        if (tlsCtx_) {
+            auto* tlsStream = static_cast<net::TlsStream*>(clientStream_.get());
+            if (!co_await tlsStream->handshake()) {
+                LOG_ERROR("VlessConnection", "fd=", clientFd_, " TLS handshake failed");
+                finishClientTask();
+                co_return;
+            }
+            LOG_INFO("VlessConnection", "fd=", clientFd_, " TLS handshake OK");
+        }
+
         // Phase 1: Handshake
         auto req = co_await processHandshake();
         command_ = req.command;
@@ -169,12 +188,12 @@ void VlessConnection::startTargetTask(int targetFd) {
 void VlessConnection::doClose() {
     closed_ = true;
 
-    auto& registry = coro::CoroutineRegistry::instance();
+    auto& pending = coro::PendingUringOps::instance();
     if (clientFd_ >= 0) {
-        registry.eraseAll(clientFd_);
+        pending.cancelFd(clientFd_);
     }
     if (targetFd_ >= 0) {
-        registry.eraseAll(targetFd_);
+        pending.cancelFd(targetFd_);
     }
 
     if (targetFd_ >= 0) {

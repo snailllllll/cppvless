@@ -95,7 +95,7 @@ public:
      * @brief 读取握手 greeting 并校验（仅支持无认证 0x00）
      * @return true 客户端支持无认证方法
      */
-    static coro::Task<bool> readGreeting(coro::UringBufferedStream& stream);
+    static coro::Task<bool> readGreeting(coro::BufferedStream& stream);
 
     /**
      * @brief 编码握手响应：VER=5, METHOD=0（无认证）
@@ -106,7 +106,7 @@ public:
      * @brief 读取 SOCKS5 请求（CONNECT / UDP ASSOCIATE）
      * @throw std::runtime_error 解析失败时
      */
-    static coro::Task<Request> readRequest(coro::UringBufferedStream& stream);
+    static coro::Task<Request> readRequest(coro::BufferedStream& stream);
 
     /**
      * @brief 编码响应头

@@ -4,6 +4,7 @@
 #include "coro/task.h"
 #include "coro/uring_awaitable.h"
 #include "net/io_uring.h"
+#include "net/stream.h"
 #include "common/log.h"
 
 #include <cstdint>
@@ -28,61 +29,29 @@ namespace coro {
  *   n, err := conn.Read(data)
  *   conn.Write(data[:n])
  *   conn.CloseWrite()  // 或 net.TCPConn.CloseWrite()
+ *
+ * 实现 net::Stream 接口（明文流实现；TLS 场景由 TlsStream 实现同一接口）。
+ *
+ * 注意：协程方法实现位于 src/coro/async_stream.cpp（GCC 协程 frame 符号
+ * 在 header 内联 + vtable 引用时存在链接问题，故下沉到 .cpp）。
  */
-class AsyncStream {
+class AsyncStream : public net::Stream {
 public:
-    explicit AsyncStream(int fd, net::IoUring& uring)
-        : fd_(fd), uring_(uring) {}
+    explicit AsyncStream(int fd, net::IoUring& uring);
 
-    /**
-     * @brief 读取数据
-     * @param maxBytes 缓冲区大小
-     * @return RecvResult: 可区分 EOF / 错误 / 正常
-     * 
-     * 对标 Go: n, err := conn.Read(buf)
-     *   rr.ok()     → n > 0, err == nil
-     *   rr.eof()    → n == 0, err == io.EOF
-     *   rr.error()  → n == 0, err != nil
-     */
-    Task<RecvResult> read(size_t maxBytes = 8192) {
-        co_return co_await AsyncRecv(fd_, uring_, maxBytes);
-    }
+    /// 读取数据：RecvResult 可区分 EOF / 错误 / 正常
+    Task<RecvResult> read(size_t maxBytes = 8192) override;
 
-    /**
-     * @brief 写入全部数据（处理部分写）
-     * @return 实际写入字节数，<=0 表示错误
-     * 
-     * 对标 Go: conn.Write(data)  // Go 的 Write 保证全部写入或返回错误
-     */
-    Task<int> writeFull(const void* data, size_t len) {
-        size_t offset = 0;
-        while (offset < len) {
-            int sent = co_await AsyncSend(fd_, uring_,
-                static_cast<const uint8_t*>(data) + offset,
-                len - offset);
-            if (sent <= 0) {
-                co_return (offset > 0) ? static_cast<int>(offset) : sent;
-            }
-            offset += static_cast<size_t>(sent);
-        }
-        co_return static_cast<int>(len);
-    }
+    /// 写入全部数据（处理部分写）；返回实际写入字节数，<=0 表示错误
+    Task<int> writeFull(const void* data, size_t len) override;
 
-    Task<int> writeFull(const std::vector<uint8_t>& data) {
-        co_return co_await writeFull(data.data(), data.size());
-    }
+    /// vector 便捷重载
+    Task<int> writeFull(const std::vector<uint8_t>& data) override;
 
-    /**
-     * @brief 半关闭写方向（发送 FIN）
-     * 
-     * 对标 Go: tcpConn.CloseWrite() 或 task.Close(writer)
-     * 通知对端我们不再发送数据，但仍可接收
-     */
-    Task<int> shutdownWrite() {
-        co_return co_await AsyncShutdown(fd_, uring_, SHUT_WR);
-    }
+    /// 半关闭写方向（发送 FIN）
+    Task<int> shutdownWrite() override;
 
-    int fd() const { return fd_; }
+    int fd() const override { return fd_; }
 
 private:
     int fd_;
@@ -109,7 +78,7 @@ private:
  * 如果不 shutdown，它会一直等下去，直到超时或对端主动关闭。
  * shutdown SHUT_WR 会发送 FIN，让对端 recv 返回 0（EOF），从而优雅退出。
  */
-inline Task<bool> copyStream(AsyncStream& dst, AsyncStream& src, const bool& stop) {
+inline Task<bool> copyStream(net::Stream& dst, net::Stream& src, const bool& stop) {
     while (!stop) {
         auto rr = co_await src.read();
         if (rr.eof()) {

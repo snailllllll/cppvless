@@ -1,7 +1,6 @@
 #ifndef VMESS_COMMON_LOG_H
 #define VMESS_COMMON_LOG_H
 
-#include <iostream>
 #include <sstream>
 #include <string>
 
@@ -16,36 +15,56 @@ enum class LogLevel {
     DEBUG = 4
 };
 
+/**
+ * @brief 轻量异步日志器（目标 A 方案，见 doc/20-logging-plan.md）
+ *
+ * 设计要点：
+ *   - 调用点只做拼接 + 入队（一次加锁 push），不做任何 I/O；
+ *   - 后台线程批量取出 → 一次 write 合并写入 stderr（可选落盘文件）；
+ *   - 去掉 std::endl 逐条 flush：系统调用从"每条 1 次"降为"每批 1 次"；
+ *   - 队列满时丢弃并计数（背压），防止日志风暴打爆内存；
+ *   - 自带时间戳 + 线程号（排障）。
+ *
+ * 接口兼容：LOG_ERROR/LOG_WARN/LOG_INFO/LOG_DEBUG 宏保持不变，
+ * setLogLevel/parseLogLevel 语义不变。实现位于 src/common/log.cpp。
+ */
 class Logger {
 public:
-    static Logger& instance() {
-        static Logger logger;
-        return logger;
-    }
+    static Logger& instance();
 
-    void setLevel(LogLevel level) { level_ = level; }
+    void setLevel(LogLevel level);
     LogLevel level() const { return level_; }
+    bool shouldLog(LogLevel level) const;
 
-    bool shouldLog(LogLevel level) const {
-        return static_cast<int>(level) <= static_cast<int>(level_);
-    }
+    /// 设置落盘文件（空 = 仅 stderr）；在首次写入前调用一次
+    void setLogFile(const std::string& path);
+
+    /// 入队一条日志（调用点：拼接 + 加锁 push，极快）
+    void enqueue(LogLevel level, std::string&& line);
+
+    /// 停止后台线程并排空剩余队列（进程退出前调用）
+    void shutdown();
 
 private:
+    Logger();
+    ~Logger();
+    Logger(const Logger&) = delete;
+    Logger& operator=(const Logger&) = delete;
+
+    void workerLoop();
+
+    struct Impl;
+    Impl* impl_;
+
     LogLevel level_ = LogLevel::INFO;
 };
 
-inline void setLogLevel(LogLevel level) {
-    Logger::instance().setLevel(level);
-}
+void setLogLevel(LogLevel level);
 
-inline LogLevel parseLogLevel(const std::string& s) {
-    if (s == "none" || s == "NONE") return LogLevel::NONE;
-    if (s == "error" || s == "ERROR") return LogLevel::ERROR;
-    if (s == "warn" || s == "WARN") return LogLevel::WARN;
-    if (s == "info" || s == "INFO") return LogLevel::INFO;
-    if (s == "debug" || s == "DEBUG") return LogLevel::DEBUG;
-    return LogLevel::INFO;
-}
+LogLevel parseLogLevel(const std::string& s);
+
+/// 格式化完整日志行：时间戳 + 线程号 + 级别 + 消息
+std::string formatLogLine(LogLevel level, const std::string& message);
 
 template<typename... Args>
 void log(LogLevel level, const std::string& tag, Args&&... args) {
@@ -55,7 +74,7 @@ void log(LogLevel level, const std::string& tag, Args&&... args) {
     std::ostringstream oss;
     oss << "[" << tag << "] ";
     (oss << ... << args);
-    std::cerr << oss.str() << std::endl;
+    logger.enqueue(level, std::move(oss.str()));
 }
 
 #define LOG_ERROR(tag, ...) vmess::common::log(vmess::common::LogLevel::ERROR, tag, __VA_ARGS__)

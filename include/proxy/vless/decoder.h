@@ -20,13 +20,13 @@ class Decoder {
 public:
     /**
      * @brief 从缓冲流中解码 VLESS 请求头
-     * @param stream 缓冲流
+     * @param stream 缓冲流（抽象接口，明文/TLS 均可）
      * @return 解析后的请求
      * 
      * 使用方式：
      *   auto req = co_await Decoder::decode(stream);
      */
-    static coro::Task<Request> decode(coro::UringBufferedStream& stream, const Validator& validator);
+    static coro::Task<Request> decode(coro::BufferedStream& stream, const Validator& validator);
 
     /**
      * @brief 编码响应头
@@ -36,8 +36,8 @@ public:
     static std::array<uint8_t, 2> encodeResponse(uint8_t version);
 
 private:
-    static coro::Task<void> parseAddons(coro::UringBufferedStream& stream, Request& req);
-    static coro::Task<void> readAddress(coro::UringBufferedStream& stream, Request& req);
+    static coro::Task<void> parseAddons(coro::BufferedStream& stream, Request& req);
+    static coro::Task<void> readAddress(coro::BufferedStream& stream, Request& req);
 };
 
 } // namespace vless

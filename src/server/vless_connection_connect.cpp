@@ -42,8 +42,7 @@ coro::Task<bool> VlessConnection::connectTarget(const proxy::vless::Request& req
 
 coro::Task<bool> VlessConnection::sendResponseAndKey(uint8_t version) {
     auto response = proxy::vless::Decoder::encodeResponse(version);
-    int sendResult = co_await coro::AsyncSend(clientFd_, uring_,
-                                               response.data(), response.size());
+    int sendResult = co_await clientStream_->writeFull(response.data(), response.size());
     if (sendResult < 0) {
         LOG_ERROR("VlessConnection", "fd=", clientFd_, " send response failed: ", sendResult,
                   " (", strerror(-sendResult), ")");
@@ -55,8 +54,7 @@ coro::Task<bool> VlessConnection::sendResponseAndKey(uint8_t version) {
 
     if (useEncryption_) {
         const auto& serverPubKey = encryptionSession_->publicKey();
-        coro::AsyncStream encStream(clientFd_, uring_);
-        int sendKeyResult = co_await encStream.writeFull(
+        int sendKeyResult = co_await clientStream_->writeFull(
             std::vector<uint8_t>(serverPubKey.begin(), serverPubKey.end()));
         if (sendKeyResult <= 0) {
             LOG_ERROR("VlessConnection", "fd=", clientFd_, " failed to send server public key");

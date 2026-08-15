@@ -16,7 +16,9 @@ namespace client {
 
 Socks5Connection::Socks5Connection(int appFd, net::IoUring& uring,
                                    const VlessClientConfig& cfg)
-    : appFd_(appFd), uring_(uring), cfg_(cfg), stream_(appFd, uring) {}
+    : appFd_(appFd), uring_(uring), cfg_(cfg),
+      appStream_(std::make_unique<coro::AsyncStream>(appFd, uring)),
+      stream_(*appStream_) {}
 
 Socks5Connection::~Socks5Connection() {
     doClose();
@@ -49,14 +51,14 @@ coro::Task<void> Socks5Connection::clientTask() {
         if (!noAuth) {
             LOG_WARN("Socks5Connection", "fd=", appFd_,
                      " no acceptable auth method (only no-auth supported)");
-            coro::AsyncStream appStream(appFd_, uring_);
+            net::Stream& appStream = *appStream_;
             std::vector<uint8_t> refuse = {0x05, 0xFF};
             co_await appStream.writeFull(refuse);
             finishClientTask();
             co_return;
         }
 
-        coro::AsyncStream appStream(appFd_, uring_);
+        net::Stream& appStream = *appStream_;
         int g = co_await appStream.writeFull(proxy::socks5::Parser::encodeGreetingResponse());
         if (g <= 0) {
             finishClientTask();
@@ -121,7 +123,7 @@ coro::Task<void> Socks5Connection::runTcpSession(const proxy::socks5::Request& r
 
     // 转发握手阶段多读出的远端数据
     if (!handshake.remaining.empty()) {
-        coro::AsyncStream appStream(appFd_, uring_);
+        net::Stream& appStream = *appStream_;
         int fwd = co_await appStream.writeFull(handshake.remaining);
         if (fwd <= 0) {
             LOG_WARN("Socks5Connection", "fd=", appFd_,
@@ -133,7 +135,7 @@ coro::Task<void> Socks5Connection::runTcpSession(const proxy::socks5::Request& r
     // 启动对端协程，双向中继
     startRemoteTask(remoteFd_);
 
-    coro::AsyncStream appStream(appFd_, uring_);
+    net::Stream& appStream = *appStream_;
     coro::AsyncStream remoteStream(remoteFd_, uring_);
     co_await coro::copyStream(remoteStream, appStream, closed_);
     LOG_INFO("Socks5Connection", "fd=", appFd_, " app→remote relay finished");
@@ -207,7 +209,7 @@ coro::Task<void> Socks5Connection::remoteTask(int remoteFd) {
     LOG_DEBUG("Socks5Connection", "fd=", appFd_, " remoteTask START, remoteFd=", remoteFd);
 
     try {
-        coro::AsyncStream appStream(appFd_, uring_);
+        net::Stream& appStream = *appStream_;
         coro::AsyncStream remoteStream(remoteFd, uring_);
         co_await coro::copyStream(appStream, remoteStream, closed_);
     } catch (const std::exception& e) {
@@ -241,7 +243,7 @@ coro::Task<bool> Socks5Connection::sendSocksReply(proxy::socks5::Reply reply,
                                                   const std::string& bindIp,
                                                   uint16_t bindPort) {
     auto bytes = proxy::socks5::Parser::encodeReply(reply, bindIp, bindPort);
-    coro::AsyncStream appStream(appFd_, uring_);
+    net::Stream& appStream = *appStream_;
     int written = co_await appStream.writeFull(bytes);
     co_return written > 0;
 }
@@ -269,12 +271,12 @@ void Socks5Connection::finishClientTask() {
 void Socks5Connection::doClose() {
     closed_ = true;
 
-    auto& registry = coro::CoroutineRegistry::instance();
+    auto& pending = coro::PendingUringOps::instance();
     if (appFd_ >= 0) {
-        registry.eraseAll(appFd_);
+        pending.cancelFd(appFd_);
     }
     if (remoteFd_ >= 0) {
-        registry.eraseAll(remoteFd_);
+        pending.cancelFd(remoteFd_);
     }
 
     // UDP 中继随连接销毁而停止
