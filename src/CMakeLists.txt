@@ -1,6 +1,15 @@
-# 公共库（轻量异步日志、JSON 配置读写等）
-add_library(common STATIC common/log.cpp common/config.cpp)
-target_include_directories(common PUBLIC ${PROJECT_SOURCE_DIR}/include)
+# 公共库（轻量异步日志、JSON 配置读写、分享链接/二维码等）
+# qrcodegen.cpp: nayuki/QR-Code-generator (MIT)，二维码生成（vendor 于 third_party）
+add_library(common STATIC
+    common/log.cpp
+    common/config.cpp
+    common/link.cpp
+    ${PROJECT_SOURCE_DIR}/third_party/qrcodegen/qrcodegen.cpp
+)
+target_include_directories(common PUBLIC
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/third_party/qrcodegen
+)
 target_link_libraries(common PUBLIC pthread OpenSSL::Crypto)
 
 # Socket 封装库

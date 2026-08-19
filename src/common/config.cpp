@@ -338,6 +338,7 @@ bool writeServerConfig(const std::string& path, const ServerConfig& cfg,
     std::ostringstream oss;
     oss << "{\n";
     oss << "  \"port\": " << static_cast<int>(cfg.port) << ",\n";
+    oss << "  \"host\": \"" << jsonEscape(cfg.host) << "\",\n";
     oss << "  \"log_level\": \"" << jsonEscape(cfg.logLevel) << "\",\n";
     oss << "  \"workers\": " << cfg.workers << ",\n";
     oss << "  \"tls\": {\n";
@@ -413,6 +414,9 @@ bool loadServerConfig(const std::string& path, ServerConfig& cfg,
 
     if (const Json* v = root->get("port"); v && v->isNumber()) {
         cfg.port = static_cast<uint16_t>(v->asInt());
+    }
+    if (const Json* v = root->get("host"); v && v->isString()) {
+        cfg.host = v->asString();
     }
     if (const Json* v = root->get("log_level"); v && v->isString()) {
         cfg.logLevel = v->asString();

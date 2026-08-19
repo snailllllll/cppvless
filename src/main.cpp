@@ -3,6 +3,7 @@
 #include "server/vless_connection.h"
 #include "common/log.h"
 #include "common/config.h"
+#include "common/link.h"
 #include "proxy/vless/validator.h"
 #include "net/tls.h"
 
@@ -38,6 +39,8 @@ struct Cli {
     std::string certDir;
     bool certDaysSet = false;
     int certDays = 365;
+    bool publicHostSet = false;
+    std::string publicHost;
 };
 
 void printUsage(const char* prog) {
@@ -58,6 +61,8 @@ void printUsage(const char* prog) {
         "  --key <path>       私钥文件（PEM）\n"
         "  --cert-dir <dir>   自签证书落盘目录（默认 ./certs，容器内 /etc/vmess/certs）\n"
         "  --cert-days <days> 自签证书有效期天数（默认 365）\n"
+        "  --public-host <host> 公网地址（域名/IP），用于生成 vless:// 分享链接与\n"
+        "                      二维码（默认取配置文件 host 字段；均未配置则不打印）\n"
         "  --log-file <path>  日志落盘文件（异步日志追加写入；默认仅 stderr）\n"
         "\n"
         "证书语义（见 doc/18-server-tls-support.md）：\n"
@@ -97,6 +102,9 @@ bool parseArgs(int argc, char* argv[], Cli& cli, std::string& configPath,
         } else if (arg == "--cert-days" && i + 1 < argc) {
             cli.certDaysSet = true;
             cli.certDays = std::max(1, std::atoi(argv[++i]));
+        } else if (arg == "--public-host" && i + 1 < argc) {
+            cli.publicHostSet = true;
+            cli.publicHost = argv[++i];
         } else if (arg == "--log-file" && i + 1 < argc) {
             logFile = argv[++i];
         } else if (arg == "-h" || arg == "--help") {
@@ -159,6 +167,9 @@ void applyCliOverrides(const Cli& cli, vmess::common::ServerConfig& cfg) {
     }
     if (cli.certDaysSet) {
         cfg.tls.certDays = cli.certDays;
+    }
+    if (cli.publicHostSet) {
+        cfg.host = cli.publicHost;
     }
 }
 
@@ -229,6 +240,24 @@ void printBanner(const vmess::common::ServerConfig& cfg, const std::string& conf
         std::cerr << "  user[" << i << "]: " << cfg.users[i].uuid
                   << (cfg.users[i].name.empty() ? "" : " (" + cfg.users[i].name + ")")
                   << (ok ? "" : " [INVALID]") << std::endl;
+    }
+
+    // 分享链接 + 二维码（需配置公网地址 host / --public-host）
+    if (!cfg.host.empty()) {
+        for (size_t i = 0; i < cfg.users.size(); ++i) {
+            const std::string link = vmess::common::buildVlessLink(cfg.host, cfg, cfg.users[i]);
+            if (link.empty()) {
+                continue;
+            }
+            std::cerr << std::endl;
+            std::cerr << "Share link[" << i << "] (客户端扫码/粘贴导入):" << std::endl;
+            std::cerr << "  " << link << std::endl;
+            std::cerr << vmess::common::renderQrText(link);
+        }
+    } else {
+        std::cerr << std::endl;
+        std::cerr << "Hint: 配置 host（配置文件 host 字段）或 --public-host <域名/IP>"
+                     " 可输出 vless:// 分享链接与二维码" << std::endl;
     }
     std::cerr << "Protocol: VLESS"
               << (tlsCfg.enabled ? " + TLS (built-in)" : " (plaintext, no TLS)")

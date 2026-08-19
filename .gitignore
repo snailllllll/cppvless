@@ -15,7 +15,8 @@ cmake-build-*/
 
 # Dependency directories
 vcpkg/
-third_party/
+third_party/*
+!third_party/qrcodegen/
 
 # Logs
 *.log

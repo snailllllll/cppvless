@@ -29,6 +29,7 @@ struct ServerConfig {
     uint16_t port = 1080;             // 明文 VLESS 端口
     std::string logLevel = "info";    // debug/info/warn/error
     int workers = 0;                  // 0 = 自动（CPU 核数）
+    std::string host;                 // 公网地址（域名/IP），用于生成分享链接；空则不打印
     TlsConfigData tls;
     std::vector<UserConfig> users;    // 认证用户（UUID）列表
 };

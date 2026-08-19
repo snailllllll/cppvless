@@ -16,7 +16,7 @@ C++20 + io_uring + 协程实现的 VLESS 代理（服务端 + SOCKS5 客户端�
 
 ## 快速开始（一键安装）
 
-从 GitHub 仓库获取脚本后即可运行（参考测试环境部署链路：Docker 静态构建 → 安装 → 生成配置 → 启动）：
+从 GitHub 仓库获取脚本后即可运行。脚本**默认下载预编译产物**（GitHub Releases 发布，amd64/arm64，静态链接，无需本地编译工具链）：
 
 ```bash
 # 方式一：clone 仓库后运行
@@ -31,12 +31,35 @@ sudo bash install.sh
 
 安装脚本会：
 
-1. 编译服务端（优先 Docker 内静态构建，产物跨发行版兼容；无 Docker 时用系统工具链本地编译）
-2. 生成 `/etc/vmess/config.json`（首次运行自动生成随机 UUID，重复安装复用）
-3. 启动服务：Docker（host 网络 + privileged）或 systemd / nohup
-4. 输出 VLESS 连接信息（UUID、明文端口 1080、TLS 端口 8848）
+1. **获取二进制**：默认从 GitHub Releases 下载预编译产物并做 SHA256 校验；无网络/非 amd64/arm64 架构可用 `VMESS_SOURCE=source` 回退现场编译（Docker 静态构建或系统工具链）
+2. **可选启用 TCP BBR**（默认开启）：加载 `tcp_bbr`、设置 `net.ipv4.tcp_congestion_control=bbr` + `net.core.default_qdisc=fq`，持久化到 `/etc/sysctl.d/99-bbr.conf`（详见 `doc/22-server-ops-tuning.md`）
+3. 生成 `/etc/vmess/config.json`（首次运行自动生成随机 UUID，重复安装复用）
+4. 启动服务：Docker（host 网络 + privileged）或 systemd / nohup
+5. 输出 VLESS 连接信息（UUID、明文端口 1080、TLS 端口 8848）
 
-可用环境变量：`VMESS_PORT`、`VMESS_TLS_PORT`、`VMESS_LOG_LEVEL`、`VMESS_USE_DOCKER`（auto/1/0）、`VMESS_WORKDIR`。
+可用环境变量：
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `VMESS_SOURCE` | `binary` | `binary`（下载预编译产物）/ `source`（现场编译） |
+| `VMESS_ENABLE_BBR` | `1` | 是否启用 TCP BBR（`0` 跳过） |
+| `VMESS_PORT` | `1080` | 明文 VLESS 端口 |
+| `VMESS_TLS_PORT` | `8848` | TLS 端口（自签证书保底） |
+| `VMESS_LOG_LEVEL` | `info` | 日志等级 |
+| `VMESS_USE_DOCKER` | `auto` | `auto` / `1` / `0`，是否用容器启动 |
+| `VMESS_PUBLIC_HOST` | 空 | 公网地址（域名/IP）；写入配置 host，部署后日志输出分享链接与二维码 |
+| `VMESS_WORKDIR` | `/opt/cppvless` | 源码 clone 目录（仅 `VMESS_SOURCE=source`） |
+
+## 预编译产物发布
+
+打 `v*` tag 触发 `.github/workflows/release.yml`：容器内静态编译 amd64 / arm64 双架构，打包 `cppvless-linux-<arch>.tar.gz`（含 `vmess_server`、`vmess_client`）并附带 SHA256 校验文件，发布到 GitHub Releases：
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+产物下载地址（install.sh 默认使用 `latest`）：
+`https://github.com/snailllllll/cppvless/releases/latest/download/cppvless-linux-<arch>.tar.gz`
 
 ## 配置
 
@@ -45,6 +68,7 @@ sudo bash install.sh
 ```json
 {
   "port": 1080,
+  "host": "your.server.com",
   "log_level": "info",
   "workers": 0,
   "tls": {
@@ -66,6 +90,7 @@ sudo bash install.sh
 | 字段 | 含义 | 默认 |
 |---|---|---|
 | `port` | 明文 VLESS 端口 | 1080 |
+| `host` | 公网地址（域名/IP），用于生成分享链接；空则不输出 | 空 |
 | `log_level` | 日志等级 debug/info/warn/error | info |
 | `workers` | worker 线程数，0 = CPU 核数 | 0 |
 | `tls.enabled` | 是否启用内置 TLS 端口 | false |
@@ -78,7 +103,21 @@ sudo bash install.sh
 **配置优先级**：命令行参数 > 环境变量 > 配置文件。
 
 - `VLESS_USERS` 环境变量：逗号分隔的 UUID 列表，追加到配置文件的 `users`
-- 命令行：`--tls-port/--cert/--key/--cert-dir/--cert-days/--log-file` 以及位置参数 `port loglevel workers` 均可覆盖配置
+- 命令行：`--tls-port/--cert/--key/--cert-dir/--cert-days/--public-host/--log-file` 以及位置参数 `port loglevel workers` 均可覆盖配置
+
+## 分享链接与二维码
+
+服务端启动时，若配置了公网地址（配置文件 `host` 字段或 `--public-host <域名/IP>`），日志横幅会为每个用户输出标准 **VLESS 分享链接**（兼容 v2rayN / v2rayNG / Shadowrocket / Clash 等客户端扫码或粘贴导入）及**终端二维码**（UTF-8 半块字符渲染，直接手机扫码）：
+
+```
+Share link[0] (客户端扫码/粘贴导入):
+  vless://xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx@your.server.com:8848?encryption=none&security=tls&type=tcp&headerType=none&allowInsecure=1#cppvless
+██ ▀▀▀▀▀ █ ███▄ ...
+```
+
+- TLS 开启时链接走 TLS 端口（`security=tls`）；自签证书自动附加 `allowInsecure=1`（客户端跳过证书校验）
+- 未配置 host 时横幅给出提示，配置后重启即可输出
+- Docker 部署下直接 `docker logs vmess | head -30` 即可看到链接与二维码
 
 ### 服务端手动启动
 
@@ -156,6 +195,4 @@ third_party/                  # BLAKE3 等第三方源码
 | `doc/22-server-ops-tuning.md` | 服务端运维调优（TCP BBR 等） |
 | `doc/vless-protocol-evolution-log.md` | 协议与运行时演进日志 |
 
-## 许可
 
-内部项目，无开源许可声明。

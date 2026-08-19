@@ -1,0 +1,89 @@
+name: Release Prebuilt Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  # ══════════════════════════════════════════════
+  # 构建阶段：容器内静态编译（与 build.sh / deploy.yml 一致）
+  #   amd64:  原生编译
+  #   arm64:  QEMU 模拟 + arm64v8/ubuntu:22.04 编译
+  # 产物仅依赖 glibc + OpenSSL3，跨发行版兼容
+  # ══════════════════════════════════════════════
+  build:
+    name: Build (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            image: ubuntu:22.04
+          - arch: arm64
+            platform: linux/arm64
+            image: arm64v8/ubuntu:22.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup QEMU (arm64)
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build in container (static link)
+        run: |
+          docker run --rm --platform ${{ matrix.platform }} \
+            -v "$PWD":/work -w /work \
+            ${{ matrix.image }} bash -c "
+            set -e
+            apt-get update -qq
+            apt-get install -y -qq --no-install-recommends \
+              build-essential g++-12 cmake liburing-dev libssl-dev >/dev/null
+            rm -f /usr/lib/*-linux-gnu/liburing.so* /lib/*-linux-gnu/liburing.so*
+            cmake -B build-docker \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_CXX_COMPILER=g++-12 \
+              -DCMAKE_EXE_LINKER_FLAGS='-static-libstdc++ -static-libgcc'
+            cmake --build build-docker -j\$(nproc)
+          "
+
+      - name: Package tarball + checksum
+        run: |
+          mkdir -p dist
+          tar -czf dist/cppvless-linux-${{ matrix.arch }}.tar.gz \
+            -C build-docker/src vmess_server vmess_client
+          sha256sum dist/cppvless-linux-${{ matrix.arch }}.tar.gz \
+            | awk '{print $1}' > dist/cppvless-linux-${{ matrix.arch }}.tar.gz.sha256
+          ls -lh dist/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cppvless-linux-${{ matrix.arch }}
+          path: dist/
+
+  # ══════════════════════════════════════════════
+  # 发布阶段：挂到 GitHub Release（install.sh 从中下载）
+  # ══════════════════════════════════════════════
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/*
+          generate_release_notes: true
