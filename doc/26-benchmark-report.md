@@ -14,7 +14,8 @@
 | 指标 | cpp-vless | go (v2ray) | 差距 |
 |---|---|---|---|
 | **L1 连接建立速率**（明文） | **3,910 conn/s** | **3,912 conn/s** | **打平（0.05%）** |
-| **L2 转发吞吐**（明文，iperf3） | **1.580 Gbps** | **1.630 Gbps** | cpp 略低 ~3% |
+| **L2 转发吞吐**（明文，iperf3 单流） | **1.580 Gbps** | **1.630 Gbps** | cpp 略低 ~3% |
+| **L2 转发吞吐**（并发 2/4/8 流） | 1.46–1.60 Gbps | 1.62–1.66 Gbps | cpp 略低 3–10% |
 | **转发 CPU 效率** | **105%**（~0.66 核/Gbps） | **69%**（~0.42 核/Gbps） | cpp 多耗 ~57% CPU |
 
 - **连接建立打平**：修复 cpp server 的 double-free 崩溃后，两者并发建连能力无显著差异
@@ -98,8 +99,9 @@
 
 **功能**：
 - L1：对 cpp-plain(10883) / go-plain(10882) 端口 ABAB 交替跑 N 轮 `bench_conn.py`
-- L2：切换 proxychains 指向目标端口后跑 N 轮 iperf3
+- L2：切换 proxychains 指向目标端口后跑 N 轮 iperf3（默认单流；`--parallel N` 用 `-P N` 多流）
 - 每轮压测期间后台线程经 SSH 到被测端 `pidstat` 采样被测进程瞬时 CPU
+- L2 额外采样**压测端 xray 进程 CPU**，用于判断瓶颈在哪一端
 - 汇总取中位数，结果落盘 CSV
 
 **SSH 配置**（脚本内常量）：
@@ -112,14 +114,18 @@
 ```bash
 # L1：7 轮，并发 50，每轮 10s，ABAB 交替
 python3 bench/bench_multi.py --rounds 7 --conns 50 --duration 10 --mode l1 --out /tmp/bench_l1.csv
-# L2：7 轮，每轮 8s
+# L2：7 轮，每轮 8s（单流）
 python3 bench/bench_multi.py --rounds 7 --duration 8 --mode l2 --out /tmp/bench_l2.csv
+# L2 并发流对比（iperf3 -P N）
+python3 bench/bench_multi.py --rounds 3 --duration 8 --parallel 2 --mode l2 --out /tmp/bench_l2_p2.csv
+python3 bench/bench_multi.py --rounds 3 --duration 8 --parallel 4 --mode l2 --out /tmp/bench_l2_p4.csv
+python3 bench/bench_multi.py --rounds 3 --duration 8 --parallel 8 --mode l2 --out /tmp/bench_l2_p8.csv
 # L1 并发梯度验证平台
 python3 bench/bench_multi.py --rounds 3 --conns 100 --duration 6 --mode l1
 python3 bench/bench_multi.py --rounds 3 --conns 200 --duration 6 --mode l1
 ```
 
-**输出**：CSV 列 `mode,side,round,metric,cpu_max_pct`；终端输出每轮明细 + 中位数汇总。
+**输出**：CSV 列 `mode,side,round,metric,cpu_max_pct`；终端输出每轮明细 + 中位数汇总 + 压测端 xray CPU。
 
 ### 4.2 `bench_conn.py`（L1 底层脚本）
 
@@ -182,7 +188,7 @@ python3 bench/bench_multi.py --rounds 7 --duration 8 --mode l2 --out /tmp/bench_
 
 ## 6. 测试结果（原始数据 + 汇总）
 
-> 完整逐轮原始数据见 `doc/benchmark-data/bench_l1.csv`、`bench_l2.csv`、`bench_l1_c100.csv`、`bench_l1_c200.csv`。以下为关键数据汇总。
+> 完整逐轮原始数据见 `doc/benchmark-data/`（`bench_l1.csv`、`bench_l2.csv`、`bench_l1_c100.csv`、`bench_l1_c200.csv`、`bench_l2_p1/p2/p4/p8.csv`）。以下为关键数据汇总。
 
 ### 6.1 L1 连接建立速率（并发 50，10s/轮，7 轮 ABAB 交替）
 
@@ -226,14 +232,31 @@ python3 bench/bench_multi.py --rounds 7 --duration 8 --mode l2 --out /tmp/bench_
 - retransmits 均为 0。
 - **结论：cpp 略低 ~3%，基本持平**。
 
-### 6.4 CPU 效率（压测期间瞬时 %CPU 峰值，各轮取中位数）
+### 6.4 L2 并发流对比（iperf3 -P N，3 轮取中位数，8s/轮）
+
+> 验证"增大并发流能否突破单流吞吐上限"，同时采集压测端 xray CPU 判断瓶颈端。
+
+| 并发流 P | cpp_plain (Gbps) | go_plain (Gbps) | cpp CPU | go CPU | 压测端 xray CPU |
+|---|---|---|---|---|---|
+| 1 | 1.440 | 1.630 | 112% | 64% | 26% |
+| 2 | 1.460 | 1.620 | 100% | 57% | 43.5% |
+| 4 | 1.600 | 1.630 | 103% | 94% | 39% |
+| 8 | 1.490 | 1.660 | 101% | 107% | 38.5% |
+
+- **并发流不提升吞吐**：两端均停留在 ~1.6 Gbps 平台（单流 cpp 1.44 / go 1.63，并发 8 时 cpp 1.49 / go 1.66），瓶颈不在服务端并发能力。
+- **压测端 xray CPU 始终 ≤44%**：压测端不是瓶颈（2 核下仍有充足余量）。
+- **瓶颈定位**：吞吐平台大概率来自实例网络/链路（同 VPC 内网小实例带宽限制或链路 TCP 特性），与 CPU 无关。
+- **结论**：并发流下 cpp 略低 3–10%，差距未随并发扩大；与单流结论一致。
+
+### 6.5 CPU 效率（压测期间瞬时 %CPU 峰值，各轮取中位数）
 
 | 场景 | cpp_plain | go_plain | 每 Gbps CPU |
 |---|---|---|---|
 | L1（并发 50） | 57% | 44% | — |
-| L2（吞吐） | **105%** | **69%** | cpp ~0.66 核/Gbps vs go ~0.42 核/Gbps |
+| L2（单流吞吐） | **105%** | **69%** | cpp ~0.66 核/Gbps vs go ~0.42 核/Gbps |
 
 - **cpp 每 Gbps 多耗约 57% CPU**——io_uring 两段拷贝 + 每连接独立提交 SQE 的开销。
+- 注：并发流场景下 go 的 CPU 随流数上升（P=8 时 107% 打满），cpp 始终 ~100%+；两者吞吐都被网络平台限制，CPU 差距不转化为吞吐差。
 
 ---
 
@@ -252,7 +275,7 @@ python3 bench/bench_multi.py --rounds 7 --duration 8 --mode l2 --out /tmp/bench_
 ### 8.1 结论
 
 1. **连接建立能力打平**：修复 double-free 后，2 核机型上 cpp 与 go 均可达 ~3,900 conn/s。
-2. **转发吞吐基本持平**：cpp 1.58 vs go 1.63 Gbps（差 3%），无显著差距。
+2. **转发吞吐基本持平**：单流 cpp 1.58 vs go 1.63 Gbps（差 3%）；并发 2/4/8 流也不突破 ~1.6 Gbps 平台（cpp 略低 3–10%），瓶颈在网络链路而非服务端。
 3. **CPU 效率是主要差距**：cpp 每 Gbps 多耗 ~57% CPU，是最值得优化的方向。
 
 ### 8.2 优化方向（后续迭代）
@@ -281,7 +304,7 @@ python3 bench/bench_multi.py --rounds 7 --duration 8 --mode l2 --out /tmp/bench_
 |---|---|
 | `doc/26-benchmark-report.md` | 本文档（最终结论） |
 | `doc/27-double-free-troubleshooting.md` | double-free 崩溃排障全流程 |
-| `doc/benchmark-data/*.csv` | 全部逐轮原始数据 |
+| `doc/benchmark-data/*.csv` | 全部逐轮原始数据（含并发流 bench_l2_p1~p8.csv） |
 | `doc/dev/benchmark/01-first-round-method.md` | 开发期：完整压测流程（含从零部署） |
 | `doc/dev/benchmark/02-handoff.md` | 开发期：机器接管说明 |
 | `doc/dev/benchmark/03-second-round.md` | 开发期：复测与结论修正记录 |
