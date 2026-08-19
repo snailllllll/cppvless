@@ -49,6 +49,7 @@ private:
     /// 单个目标地址的 VLESS UDP 会话
     struct Session {
         int remoteFd = -1;
+        std::shared_ptr<net::Stream> stream;  // 与远端的数据流（TLS 或明文）
         proxy::socks5::Address dest;
         uint16_t port = 0;
         struct sockaddr_storage appSrc {};  // 应用 UDP 源地址（回程目标）

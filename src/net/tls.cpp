@@ -256,5 +256,23 @@ SSL_CTX* createServerSslContext(const TlsConfig& cfg, std::string* warnOut) {
     return ctx;
 }
 
+SSL_CTX* createClientSslContext(bool insecure) {
+    SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
+    if (!ctx) {
+        LOG_ERROR("Tls", "SSL_CTX_new(client) failed: ", opensslErrorString());
+        return nullptr;
+    }
+
+    if (insecure) {
+        // 自签证书场景：跳过对端证书校验（与 Xray allowInsecure 语义一致）
+        SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, nullptr);
+    } else {
+        // 正式证书场景：校验对端证书，信任系统 CA
+        SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, nullptr);
+        SSL_CTX_set_default_verify_paths(ctx);
+    }
+    return ctx;
+}
+
 } // namespace net
 } // namespace vmess

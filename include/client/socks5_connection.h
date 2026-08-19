@@ -54,10 +54,10 @@ private:
     coro::Task<void> runUdpAssociate(const proxy::socks5::Request& req);
 
     /// 远端侧协程：remote → app 转发
-    coro::Task<void> remoteTask(int remoteFd);
+    coro::Task<void> remoteTask(std::shared_ptr<net::Stream> remoteStream);
 
     /// 通知 remoteTask 启动
-    void startRemoteTask(int remoteFd);
+    void startRemoteTask(std::shared_ptr<net::Stream> remoteStream);
 
     /// 发送 SOCKS5 响应
     coro::Task<bool> sendSocksReply(proxy::socks5::Reply reply,

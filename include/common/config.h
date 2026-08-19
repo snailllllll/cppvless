@@ -41,6 +41,8 @@ struct ClientConfig {
     std::string uuid;                 // VLESS 用户 UUID
     std::string logLevel = "info";
     int workers = 0;                  // 0 = 自动（CPU 核数）
+    bool tlsEnabled = false;          // 启用 TLS 传输（VLESS+TLS）
+    bool tlsInsecure = false;         // 跳过对端证书校验（自签证书场景）
 };
 
 /**

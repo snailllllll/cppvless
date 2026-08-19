@@ -114,6 +114,7 @@ Socks5UdpRelay::getOrCreateSession(const proxy::socks5::Address& addr, uint16_t 
 
     auto session = std::make_shared<Session>();
     session->remoteFd = handshake.remoteFd;
+    session->stream = handshake.stream;
     session->dest = addr;
     session->port = port;
 
@@ -174,8 +175,12 @@ coro::Task<void> Socks5UdpRelay::recvLoop() {
         framed.push_back(static_cast<uint8_t>(len & 0xFF));
         framed.insert(framed.end(), payload.begin(), payload.end());
 
-        coro::AsyncStream remoteStream(session->remoteFd, uring_);
-        int written = co_await remoteStream.writeFull(framed);
+        if (!session->stream) {
+            LOG_WARN("Socks5UdpRelay", "udp session stream is null");
+            session->alive = false;
+            continue;
+        }
+        int written = co_await session->stream->writeFull(framed);
         if (written <= 0) {
             LOG_WARN("Socks5UdpRelay", "write to udp session failed: ", written);
             // 关闭会话：outTask 会因 recv 错误被唤醒并自行退出
@@ -222,8 +227,8 @@ coro::Task<void> Socks5UdpRelay::sendLoop() {
 }
 
 coro::Task<void> Socks5UdpRelay::sessionOutTask(Session* session) {
-    while (!closed_ && session->alive && session->remoteFd >= 0) {
-        auto rr = co_await coro::AsyncRecv(session->remoteFd, uring_);
+    while (!closed_ && session->alive && session->remoteFd >= 0 && session->stream) {
+        auto rr = co_await session->stream->read();
         if (rr.eof()) {
             break;
         }

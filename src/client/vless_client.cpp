@@ -3,6 +3,7 @@
 #include "coro/async_stream.h"
 #include "coro/buffered_stream.h"
 #include "coro/uring_awaitable.h"
+#include "net/tls_stream.h"
 #include "common/log.h"
 
 #include <arpa/inet.h>
@@ -120,30 +121,54 @@ coro::Task<VlessClientHandshakeResult> vlessConnectAndHandshake(
     LOG_INFO("VlessClient", "connected to remote ", cfg.remoteHost, ":",
              cfg.remotePort, " fd=", fd);
 
-    // 3. 发送 VLESS 请求头（补上用户 UUID）
+    // 3. 构造数据流：明文 AsyncStream；启用 TLS 时用 TlsStream 包裹（isServer=false）
+    auto rawStream = std::make_shared<coro::AsyncStream>(fd, uring);
+    std::shared_ptr<net::Stream> stream = rawStream;
+
+    if (cfg.tlsEnabled) {
+        SSL_CTX* ctx = static_cast<SSL_CTX*>(cfg.tlsCtx.get());
+        if (!ctx) {
+            LOG_ERROR("VlessClient", "tls enabled but tlsCtx is null");
+            ::close(fd);
+            co_return result;
+        }
+        auto tlsStream = std::make_shared<net::TlsStream>(*rawStream, ctx, false);
+        if (!co_await tlsStream->handshake()) {
+            LOG_ERROR("VlessClient", "TLS handshake failed to remote ",
+                      cfg.remoteHost, ":", cfg.remotePort);
+            ::close(fd);
+            co_return result;
+        }
+        LOG_INFO("VlessClient", "TLS handshake OK to ", cfg.remoteHost, ":",
+                 cfg.remotePort, " fd=", fd);
+        stream = tlsStream;
+    }
+
+    // 4. 发送 VLESS 请求头（补上用户 UUID）
     proxy::vless::Request outReq = vlessReq;
     outReq.uuid = cfg.uuid;
     auto requestBytes = proxy::vless::Encoder::encodeRequest(outReq);
-    coro::AsyncStream remoteStream(fd, uring);
-    int sent = co_await remoteStream.writeFull(requestBytes);
+    int sent = co_await stream->writeFull(requestBytes);
     if (sent <= 0) {
         LOG_ERROR("VlessClient", "failed to send vless request header, sent=", sent);
         ::close(fd);
         co_return result;
     }
 
-    // 4. 读取并校验响应头（缓冲流基于 remoteStream 取数）
-    coro::UringBufferedStream stream(remoteStream);
-    if (!co_await proxy::vless::Encoder::decodeResponse(stream)) {
+    // 5. 读取并校验响应头（缓冲流基于 stream 取数）
+    coro::UringBufferedStream buffered(*stream);
+    if (!co_await proxy::vless::Encoder::decodeResponse(buffered)) {
         LOG_ERROR("VlessClient", "invalid vless response header from remote ",
                   cfg.remoteHost);
         ::close(fd);
         co_return result;
     }
 
-    // 5. 收集握手缓冲中多读出的数据（对端可能已开始转发目标数据）
-    result.remaining = stream.drainRemaining();
+    // 6. 收集握手缓冲中多读出的数据（对端可能已开始转发目标数据）
+    result.remaining = buffered.drainRemaining();
     result.remoteFd = fd;
+    result.stream = std::move(stream);
+    result.raw = std::move(rawStream);   // TLS 时保活底层明文流
     co_return result;
 }
 

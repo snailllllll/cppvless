@@ -1,13 +1,16 @@
 #ifndef VMESS_CLIENT_VLESS_CLIENT_H
 #define VMESS_CLIENT_VLESS_CLIENT_H
 
+#include "coro/async_stream.h"
 #include "coro/task.h"
 #include "net/io_uring.h"
+#include "net/stream.h"
 #include "proxy/vless/protocol.h"
 #include "proxy/socks5/socks5.h"
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -21,6 +24,9 @@ struct VlessClientConfig {
     std::string remoteHost;                    // VLESS 服务器地址（IP 或域名）
     uint16_t remotePort = 443;                 // VLESS 服务器端口
     std::array<uint8_t, 16> uuid{};            // VLESS 用户 UUID
+    bool tlsEnabled = false;                   // 启用 TLS 传输（VLESS+TLS）
+    bool tlsInsecure = false;                  // 跳过对端证书校验（自签证书场景）
+    std::shared_ptr<void> tlsCtx;              // 客户端 SSL_CTX（shared_ptr 管理，deleter=SSL_CTX_free）
 
     /// 解析 "host:port" 形式字符串（port 缺省用默认值）
     static VlessClientConfig fromString(const std::string& s);
@@ -39,6 +45,8 @@ proxy::vless::Request toVlessRequest(const proxy::socks5::Request& req,
  */
 struct VlessClientHandshakeResult {
     int remoteFd = -1;                  // 与远端 VLESS 服务器的 TCP 连接（<0 表示失败）
+    std::shared_ptr<net::Stream> stream;    // 与远端的数据流（TLS 或明文）；中继阶段使用
+    std::shared_ptr<coro::AsyncStream> raw; // 底层明文流（TLS 时被 TlsStream 引用，需保活）
     std::vector<uint8_t> remaining;     // 握手阶段缓冲流中多读出的数据（对端已开始转发）
 };
 

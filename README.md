@@ -76,7 +76,16 @@ Share link[0] (客户端扫码/粘贴导入):
 ██ ▀▀▀▀▀ █ ███▄ ...   （终端二维码，手机直接扫码）
 ```
 
-兼容 v2rayN / v2rayNG / Shadowrocket / Clash 等客户端。Docker 部署直接 `docker logs vmess | head -30` 查看。
+### 服务端独立使用
+
+服务端是一个**完整的、可独立部署的 VLESS 服务器**，不依赖本项目的客户端。任何支持 VLESS 协议的客户端软件都可以直接接入：
+
+- 桌面：v2rayN、v2rayNG、Clash / Clash Verge、sing-box 等
+- 移动端：Shadowrocket、Quantumult X、v2rayNG、Clash 等
+
+接入方式：复制服务端日志输出的 `vless://` 分享链接（或扫描二维码），粘贴/扫码导入即可，无需额外配置。Docker 部署直接 `docker logs vmess | head -30` 查看。
+
+> 兼容性说明：服务端面向标准 VLESS 协议客户端设计（UUID 认证 + 可选 TLS）。本仓库自带的 `vmess_client` 为自研 SOCKS5 客户端，其与第三方服务端的兼容性未经系统性测试。
 
 ### 客户端
 
@@ -88,7 +97,9 @@ Share link[0] (客户端扫码/粘贴导入):
   "remote": "SERVER_IP:8848",
   "uuid": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
   "log_level": "info",
-  "workers": 0
+  "workers": 0,
+  "tls_enabled": true,
+  "tls_insecure": true
 }
 ```
 
@@ -96,7 +107,11 @@ Share link[0] (客户端扫码/粘贴导入):
 vmess_client --config /etc/vmess/client.json
 # 或命令行直接指定
 vmess_client --remote SERVER_IP:8848 --uuid <uuid> --socks5-port 1080
+# 服务端启用 TLS 时：
+vmess_client --remote SERVER_IP:8848 --uuid <uuid> --socks5-port 1080 --tls --tls-insecure
 ```
+
+> 配置字段/命令行参数说明：`tls_enabled`（或 `--tls`）启用 TLS 传输；`tls_insecure`（或 `--tls-insecure`）跳过对端证书校验（自签证书场景，对应分享链接中的 `allowInsecure=1`）。
 
 之后把浏览器/应用的 SOCKS5 代理指向 `127.0.0.1:1080` 即可。
 

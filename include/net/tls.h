@@ -34,6 +34,15 @@ struct TlsConfig {
  */
 SSL_CTX* createServerSslContext(const TlsConfig& cfg, std::string* warnOut = nullptr);
 
+/**
+ * @brief 创建客户端 SSL_CTX（TLS_client_method）
+ *
+ * @param insecure true 时跳过证书校验（自签证书场景，对应 Xray allowInsecure）；
+ *                 false 时校验对端证书并信任系统 CA（正式证书场景）。
+ * @return 创建成功的 SSL_CTX（客户端角色），失败返回 nullptr
+ */
+SSL_CTX* createClientSslContext(bool insecure);
+
 } // namespace net
 } // namespace vmess
 

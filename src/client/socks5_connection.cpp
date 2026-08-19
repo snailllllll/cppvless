@@ -132,12 +132,15 @@ coro::Task<void> Socks5Connection::runTcpSession(const proxy::socks5::Request& r
         }
     }
 
-    // 启动对端协程，双向中继
-    startRemoteTask(remoteFd_);
+    // 启动对端协程，双向中继（TLS 场景 stream 为 TlsStream，中继走 TLS 加密）
+    if (!handshake.stream) {
+        LOG_ERROR("Socks5Connection", "fd=", appFd_, " handshake stream is null");
+        co_return;
+    }
+    startRemoteTask(handshake.stream);
 
     net::Stream& appStream = *appStream_;
-    coro::AsyncStream remoteStream(remoteFd_, uring_);
-    co_await coro::copyStream(remoteStream, appStream, closed_);
+    co_await coro::copyStream(*handshake.stream, appStream, closed_);
     LOG_INFO("Socks5Connection", "fd=", appFd_, " app→remote relay finished");
 }
 
@@ -205,13 +208,13 @@ coro::Task<void> Socks5Connection::runUdpAssociate(const proxy::socks5::Request&
 /**
  * 远端侧协程：remote → app 转发（半关闭传播）
  */
-coro::Task<void> Socks5Connection::remoteTask(int remoteFd) {
-    LOG_DEBUG("Socks5Connection", "fd=", appFd_, " remoteTask START, remoteFd=", remoteFd);
+coro::Task<void> Socks5Connection::remoteTask(std::shared_ptr<net::Stream> remoteStream) {
+    LOG_DEBUG("Socks5Connection", "fd=", appFd_,
+              " remoteTask START, remoteFd=", remoteStream->fd());
 
     try {
         net::Stream& appStream = *appStream_;
-        coro::AsyncStream remoteStream(remoteFd, uring_);
-        co_await coro::copyStream(appStream, remoteStream, closed_);
+        co_await coro::copyStream(appStream, *remoteStream, closed_);
     } catch (const std::exception& e) {
         LOG_ERROR("Socks5Connection", "fd=", appFd_, " remoteTask exception: ", e.what());
     }
@@ -231,9 +234,9 @@ coro::Task<void> Socks5Connection::remoteTask(int remoteFd) {
     LOG_DEBUG("Socks5Connection", "fd=", appFd_, " remoteTask END");
 }
 
-void Socks5Connection::startRemoteTask(int remoteFd) {
+void Socks5Connection::startRemoteTask(std::shared_ptr<net::Stream> remoteStream) {
     remoteTaskStarted_ = true;
-    remoteTask_ = remoteTask(remoteFd);
+    remoteTask_ = remoteTask(std::move(remoteStream));
     if (!remoteTask_.done()) {
         remoteTask_.h.resume();
     }

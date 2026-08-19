@@ -500,6 +500,12 @@ bool loadClientConfig(const std::string& path, ClientConfig& cfg,
     if (const Json* v = root->get("workers"); v && v->isNumber()) {
         cfg.workers = static_cast<int>(v->asInt());
     }
+    if (const Json* v = root->get("tls_enabled"); v && v->isBool()) {
+        cfg.tlsEnabled = v->asBool();
+    }
+    if (const Json* v = root->get("tls_insecure"); v && v->isBool()) {
+        cfg.tlsInsecure = v->asBool();
+    }
     return true;
 }
 

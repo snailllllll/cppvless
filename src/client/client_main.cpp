@@ -4,6 +4,7 @@
 #include "client/vless_client.h"
 #include "common/log.h"
 #include "common/config.h"
+#include "net/tls.h"
 #include "proxy/vless/validator.h"
 
 #include <algorithm>
@@ -29,6 +30,10 @@ struct Cli {
     std::string logLevel;
     bool workersSet = false;
     unsigned workers = 0;
+    bool tlsEnabled = false;      // --tls
+    bool tlsEnabledSet = false;
+    bool tlsInsecure = false;     // --tls-insecure
+    bool tlsInsecureSet = false;
 };
 
 void printUsage(const char* prog) {
@@ -41,6 +46,8 @@ void printUsage(const char* prog) {
               << "  --log <level>          日志级别: none|error|warn|info|debug (default: info)\n"
               << "  --log-file <path>      日志落盘文件（异步日志追加写入；默认仅 stderr）\n"
               << "  --workers <n>          worker 数 (default: CPU 核数)\n"
+              << "  --tls                  启用 TLS 传输（VLESS+TLS）\n"
+              << "  --tls-insecure         跳过对端证书校验（自签证书场景）\n"
               << std::endl;
 }
 
@@ -71,6 +78,12 @@ bool parseArgs(int argc, char* argv[], Cli& cli, std::string& configPath,
         } else if (arg == "--workers") {
             cli.workersSet = true;
             cli.workers = std::max(1u, static_cast<unsigned>(std::atoi(next().c_str())));
+        } else if (arg == "--tls") {
+            cli.tlsEnabled = true;
+            cli.tlsEnabledSet = true;
+        } else if (arg == "--tls-insecure") {
+            cli.tlsInsecure = true;
+            cli.tlsInsecureSet = true;
         } else if (arg == "-h" || arg == "--help") {
             printUsage(argv[0]);
             return false;
@@ -99,6 +112,12 @@ void applyCliOverrides(const Cli& cli, vmess::common::ClientConfig& cfg) {
     }
     if (cli.workersSet) {
         cfg.workers = static_cast<int>(cli.workers);
+    }
+    if (cli.tlsEnabledSet) {
+        cfg.tlsEnabled = cli.tlsEnabled;
+    }
+    if (cli.tlsInsecureSet) {
+        cfg.tlsInsecure = cli.tlsInsecure;
     }
 }
 
@@ -153,6 +172,16 @@ int main(int argc, char* argv[]) {
     }
     vmess::client::VlessClientConfig cfg = vmess::client::VlessClientConfig::fromString(ccfg.remote);
     cfg.uuid = uuid;
+    cfg.tlsEnabled = ccfg.tlsEnabled;
+    cfg.tlsInsecure = ccfg.tlsInsecure;
+    if (ccfg.tlsEnabled) {
+        SSL_CTX* ctx = vmess::net::createClientSslContext(ccfg.tlsInsecure);
+        if (!ctx) {
+            std::cerr << "[ClientMain] failed to create client TLS context" << std::endl;
+            return 1;
+        }
+        cfg.tlsCtx = std::shared_ptr<void>(ctx, SSL_CTX_free);
+    }
 
     // worker 数（0 = 自动）
     unsigned int workerCount = ccfg.workers > 0
@@ -169,7 +198,11 @@ int main(int argc, char* argv[]) {
     std::cerr << "Uuid: " << ccfg.uuid << std::endl;
     std::cerr << "LogLevel: " << ccfg.logLevel << std::endl;
     std::cerr << "Workers: " << workerCount << std::endl;
-    std::cerr << "Protocol: VLESS (plaintext, no TLS)" << std::endl;
+    std::cerr << "Protocol: VLESS + "
+              << (ccfg.tlsEnabled ? "TLS (tls-insecure="
+                                      + std::string(ccfg.tlsInsecure ? "on" : "off") + ")"
+                                  : "plaintext (no TLS)")
+              << std::endl;
     std::cerr << "Press Ctrl+C to stop" << std::endl;
     std::cerr << std::endl;
 
