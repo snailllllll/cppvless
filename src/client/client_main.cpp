@@ -1,31 +1,35 @@
 #include "server/event_loop.h"
+#include "server/event_loop_runner.h"
 #include "client/socks5_connection.h"
 #include "client/vless_client.h"
 #include "common/log.h"
 #include "common/config.h"
 #include "proxy/vless/validator.h"
 
-#include <csignal>
+#include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
-static std::vector<vmess::server::EventLoop*>* g_loops = nullptr;
+namespace {
 
-void signalHandler(int sig) {
-    std::cerr << "\n[ClientMain] Received signal " << sig << ", shutting down..." << std::endl;
-    if (g_loops) {
-        for (auto* loop : *g_loops) {
-            if (loop) {
-                loop->stop();
-            }
-        }
-    }
-}
+// ── CLI 参数（记录显式设置的覆盖项）──────────────────────────────────────
+struct Cli {
+    bool socks5PortSet = false;
+    unsigned socks5Port = 1080;
+    bool remoteSet = false;
+    std::string remote;
+    bool uuidSet = false;
+    std::string uuid;
+    bool logLevelSet = false;
+    std::string logLevel;
+    bool workersSet = false;
+    unsigned workers = 0;
+};
 
 void printUsage(const char* prog) {
     std::cerr << "Usage: " << prog << " [options]\n"
@@ -40,24 +44,9 @@ void printUsage(const char* prog) {
               << std::endl;
 }
 
-int main(int argc, char* argv[]) {
-    // 命令行参数（记录显式设置的覆盖项）
-    struct Cli {
-        bool socks5PortSet = false;
-        unsigned socks5Port = 1080;
-        bool remoteSet = false;
-        std::string remote;
-        bool uuidSet = false;
-        std::string uuid;
-        bool logLevelSet = false;
-        std::string logLevel;
-        bool workersSet = false;
-        unsigned workers = 0;
-    } cli;
-
-    std::string configPath;
-    std::string logFile;
-
+/// 解析命令行；返回 false 表示应退出（报错或 --help）
+bool parseArgs(int argc, char* argv[], Cli& cli, std::string& configPath,
+               std::string& logFile) {
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         auto next = [&]() -> std::string {
@@ -84,12 +73,44 @@ int main(int argc, char* argv[]) {
             cli.workers = std::max(1u, static_cast<unsigned>(std::atoi(next().c_str())));
         } else if (arg == "-h" || arg == "--help") {
             printUsage(argv[0]);
-            return 0;
+            return false;
         } else {
             std::cerr << "[ClientMain] Unknown option: " << arg << std::endl;
             printUsage(argv[0]);
-            return 1;
+            return false;
         }
+    }
+    return true;
+}
+
+/// 命令行覆盖配置
+void applyCliOverrides(const Cli& cli, vmess::common::ClientConfig& cfg) {
+    if (cli.socks5PortSet) {
+        cfg.socks5Port = static_cast<uint16_t>(cli.socks5Port);
+    }
+    if (cli.remoteSet) {
+        cfg.remote = cli.remote;
+    }
+    if (cli.uuidSet) {
+        cfg.uuid = cli.uuid;
+    }
+    if (cli.logLevelSet) {
+        cfg.logLevel = cli.logLevel;
+    }
+    if (cli.workersSet) {
+        cfg.workers = static_cast<int>(cli.workers);
+    }
+}
+
+} // namespace
+
+int main(int argc, char* argv[]) {
+    // ── 1. 解析命令行 ────────────────────────────────────────────────────
+    Cli cli;
+    std::string configPath;
+    std::string logFile;
+    if (!parseArgs(argc, argv, cli, configPath, logFile)) {
+        return 1;
     }
 
     // 配置路径：--config > VLESS_CLIENT_CONFIG > 默认
@@ -103,34 +124,18 @@ int main(int argc, char* argv[]) {
         configPath = "/etc/vmess/client.json";
     }
 
-    // 加载客户端配置（可选；文件不存在时用内置默认，不报错）
+    // ── 2. 加载客户端配置（可选；文件不存在时用内置默认，不报错）────────
     vmess::common::ClientConfig ccfg;
     std::string cfgWarn;
     vmess::common::loadClientConfig(configPath, ccfg, cfgWarn);
-
-    // 命令行覆盖配置
-    if (cli.socks5PortSet) {
-        ccfg.socks5Port = static_cast<uint16_t>(cli.socks5Port);
-    }
-    if (cli.remoteSet) {
-        ccfg.remote = cli.remote;
-    }
-    if (cli.uuidSet) {
-        ccfg.uuid = cli.uuid;
-    }
-    if (cli.logLevelSet) {
-        ccfg.logLevel = cli.logLevel;
-    }
-    if (cli.workersSet) {
-        ccfg.workers = static_cast<int>(cli.workers);
-    }
+    applyCliOverrides(cli, ccfg);
 
     // 兼容旧行为：任何来源都未提供 UUID 时使用内置默认
     if (ccfg.uuid.empty()) {
         ccfg.uuid = "e3e740b0-2c3a-4b0e-9f1a-2c8f7d5e3a1b";
     }
 
-    // 日志落盘：优先 --log-file，其次 VLESS_LOG_FILE 环境变量
+    // ── 3. 日志 ──────────────────────────────────────────────────────────
     if (logFile.empty()) {
         const char* env = std::getenv("VLESS_LOG_FILE");
         if (env && env[0] != '\0') {
@@ -138,17 +143,14 @@ int main(int argc, char* argv[]) {
         }
     }
     vmess::common::Logger::instance().setLogFile(logFile);
-
     vmess::common::setLogLevel(vmess::common::parseLogLevel(ccfg.logLevel));
 
-    // 解析 UUID
+    // ── 4. 解析 UUID 与远端地址 ──────────────────────────────────────────
     std::array<uint8_t, 16> uuid{};
     if (!vmess::proxy::vless::Validator::parseUuid(ccfg.uuid, uuid)) {
         std::cerr << "[ClientMain] Invalid uuid: " << ccfg.uuid << std::endl;
         return 1;
     }
-
-    // 解析远端地址
     vmess::client::VlessClientConfig cfg = vmess::client::VlessClientConfig::fromString(ccfg.remote);
     cfg.uuid = uuid;
 
@@ -171,67 +173,26 @@ int main(int argc, char* argv[]) {
     std::cerr << "Press Ctrl+C to stop" << std::endl;
     std::cerr << std::endl;
 
-    std::signal(SIGINT, signalHandler);
-    std::signal(SIGTERM, signalHandler);
+    // ── 5. 组装 EventLoop 组并运行 ───────────────────────────────────────
+    std::vector<std::unique_ptr<vmess::server::EventLoop>> loops;
+    std::vector<uint16_t> ports;
+    loops.reserve(workerCount);
+    for (unsigned int i = 0; i < workerCount; ++i) {
+        // 工厂模式：每个 accept 的 fd 创建一个 SOCKS5 连接
+        loops.push_back(std::make_unique<vmess::server::EventLoop>(
+            [cfg](int clientFd, vmess::net::IoUring& uring) {
+                return std::make_unique<vmess::client::Socks5Connection>(
+                    clientFd, uring, cfg);
+            }));
+        ports.push_back(ccfg.socks5Port);
+    }
 
-    try {
-        std::vector<std::unique_ptr<vmess::server::EventLoop>> loops;
-        loops.reserve(workerCount);
-        for (unsigned int i = 0; i < workerCount; ++i) {
-            // 工厂模式：每个 accept 的 fd 创建一个 SOCKS5 连接
-            loops.push_back(std::make_unique<vmess::server::EventLoop>(
-                [cfg](int clientFd, vmess::net::IoUring& uring) {
-                    return std::make_unique<vmess::client::Socks5Connection>(
-                        clientFd, uring, cfg);
-                }));
-        }
-
-        std::vector<vmess::server::EventLoop*> loopPtrs;
-        loopPtrs.reserve(workerCount);
-        for (auto& loop : loops) {
-            loopPtrs.push_back(loop.get());
-        }
-        g_loops = &loopPtrs;
-
-        std::atomic<bool> hasError{false};
-        std::string errorMessage;
-        std::mutex errorMu;
-        std::vector<std::thread> workers;
-        workers.reserve(workerCount);
-
-        const bool enableReusePort = workerCount > 1;
-        for (unsigned int i = 0; i < workerCount; ++i) {
-            workers.emplace_back([&, i]() {
-                try {
-                    loops[i]->run(ccfg.socks5Port, enableReusePort);
-                } catch (const std::exception& e) {
-                    {
-                        std::lock_guard<std::mutex> lock(errorMu);
-                        if (!hasError.load()) {
-                            errorMessage = e.what();
-                        }
-                    }
-                    hasError = true;
-                    for (auto* loop : loopPtrs) {
-                        if (loop) {
-                            loop->stop();
-                        }
-                    }
-                }
-            });
-        }
-
-        for (auto& t : workers) {
-            if (t.joinable()) {
-                t.join();
-            }
-        }
-
-        if (hasError) {
-            throw std::runtime_error(errorMessage.empty() ? "worker thread failed" : errorMessage);
-        }
-    } catch (const std::exception& e) {
-        std::cerr << "[ClientMain] Error: " << e.what() << std::endl;
+    std::string runError;
+    const bool reusePort = workerCount > 1;
+    const int rc = vmess::server::runEventLoops(loops, ports, reusePort, &runError);
+    if (rc != 0) {
+        std::cerr << "[ClientMain] Error: "
+                  << (runError.empty() ? "event loop failed" : runError) << std::endl;
         return 1;
     }
 

@@ -156,8 +156,6 @@ third_party/                  # BLAKE3 等第三方源码
 | `doc/22-server-ops-tuning.md` | 服务端运维调优（TCP BBR 等） |
 | `doc/vless-protocol-evolution-log.md` | 协议与运行时演进日志 |
 
-> 本地开发讨论 / 学习笔记统一存放在 `doc/dev/`（不入库，见 `.gitignore`）。
-
 ## 许可
 
 内部项目，无开源许可声明。

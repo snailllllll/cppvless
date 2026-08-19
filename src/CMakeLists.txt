@@ -53,6 +53,7 @@ target_link_libraries(tls PUBLIC OpenSSL::SSL OpenSSL::Crypto coro)
 # 服务器库
 add_library(vmess_server_lib STATIC
     server/event_loop.cpp
+    server/event_loop_runner.cpp
     server/vless_connection.cpp
     server/vless_connection_handshake.cpp
     server/vless_connection_connect.cpp
