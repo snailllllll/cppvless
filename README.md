@@ -68,7 +68,7 @@ vmess_server --config /etc/vmess/config.json \
 
 ### 分享链接与二维码
 
-配置了公网地址（配置文件 `host` 或 `--public-host`）后，启动日志为每个用户输出：
+未配置公网地址时服务端会自动探测本机公网 IP（`VLESS_NO_AUTO_HOST=1` 关闭）；也可显式指定（配置文件 `host` 或 `--public-host`）。启动日志为每个用户输出：
 
 ```
 Share link[0] (客户端扫码/粘贴导入):

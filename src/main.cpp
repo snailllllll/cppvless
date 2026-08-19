@@ -62,7 +62,8 @@ void printUsage(const char* prog) {
         "  --cert-dir <dir>   自签证书落盘目录（默认 ./certs，容器内 /etc/vmess/certs）\n"
         "  --cert-days <days> 自签证书有效期天数（默认 365）\n"
         "  --public-host <host> 公网地址（域名/IP），用于生成 vless:// 分享链接与\n"
-        "                      二维码（默认取配置文件 host 字段；均未配置则不打印）\n"
+        "                      二维码（默认取配置文件 host 字段；均未配置时自动探测\n"
+        "                      本机公网 IP，VLESS_NO_AUTO_HOST=1 可关闭探测）\n"
         "  --log-file <path>  日志落盘文件（异步日志追加写入；默认仅 stderr）\n"
         "\n"
         "证书语义（见 doc/18-server-tls-support.md）：\n"
@@ -350,7 +351,28 @@ int main(int argc, char* argv[]) {
         tlsCtx.reset(ctx);
     }
 
-    // ── 6. worker 数（0 = 自动）──────────────────────────────────────────
+    // ── 6. host 自动探测（未配置公网地址时尝试获取本机公网 IP）──────────
+    //    可用 VLESS_NO_AUTO_HOST=1 关闭（纯内网/无外呼场景）
+    if (cfg.host.empty()) {
+        const char* noAuto = std::getenv("VLESS_NO_AUTO_HOST");
+        const bool skipAuto = noAuto != nullptr && std::string(noAuto) != "0";
+        if (skipAuto) {
+            std::cerr << "[Main] Skip public IP auto-detect (VLESS_NO_AUTO_HOST)" << std::endl;
+        } else {
+            std::cerr << "[Main] Auto-detecting public IP..." << std::endl;
+            const std::string ip = vmess::common::detectPublicIp();
+            if (!ip.empty()) {
+                cfg.host = ip;
+                std::cerr << "[Main] Public IP auto-detected: " << ip << std::endl;
+            } else {
+                std::cerr << "[Main] Public IP auto-detect failed"
+                             " (no outbound network?); use config host or --public-host"
+                          << std::endl;
+            }
+        }
+    }
+
+    // ── 7. worker 数（0 = 自动）──────────────────────────────────────────
     unsigned int workerCount = cfg.workers > 0
         ? static_cast<unsigned int>(cfg.workers)
         : std::thread::hardware_concurrency();
@@ -358,7 +380,7 @@ int main(int argc, char* argv[]) {
         workerCount = 1;
     }
 
-    // ── 7. 组装 EventLoop 组 ─────────────────────────────────────────────
+    // ── 8. 组装 EventLoop 组 ─────────────────────────────────────────────
     auto makeFactory = [&validator](SSL_CTX* tls) {
         return [&validator, tls](int clientFd, vmess::net::IoUring& uring) {
             return std::make_unique<vmess::server::VlessConnection>(
@@ -379,7 +401,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ── 8. 启动横幅 + 运行 ───────────────────────────────────────────────
+    // ── 9. 启动横幅 + 运行 ───────────────────────────────────────────────
     printBanner(cfg, configPath, cfgCreated, workerCount, tlsCfg, tlsWarn);
 
     std::string runError;

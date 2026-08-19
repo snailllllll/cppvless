@@ -35,6 +35,17 @@ std::string buildVlessQrText(const std::string& host,
                              const UserConfig& user,
                              const std::string& remark = "cppvless");
 
+/**
+ * @brief 探测本机公网 IP（IPv4/IPv6）。
+ *
+ * 依次尝试多个公网 IP 回显服务（api.ipify.org / icanhazip.com / ifconfig.me，
+ * 纯 HTTP GET，无需外部命令），返回第一个成功且校验合法的地址。
+ * 网络不通或超时返回空串。整个探测耗时约 1~3 秒（每个源单独超时）。
+ *
+ * @param timeoutMs 每个源的单次连接超时（毫秒，默认 3000）
+ */
+std::string detectPublicIp(int timeoutMs = 3000);
+
 } // namespace common
 } // namespace vmess
 
