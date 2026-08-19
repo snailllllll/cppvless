@@ -1,7 +1,7 @@
-# 公共库（轻量异步日志等）
-add_library(common STATIC common/log.cpp)
+# 公共库（轻量异步日志、JSON 配置读写等）
+add_library(common STATIC common/log.cpp common/config.cpp)
 target_include_directories(common PUBLIC ${PROJECT_SOURCE_DIR}/include)
-target_link_libraries(common PUBLIC pthread)
+target_link_libraries(common PUBLIC pthread OpenSSL::Crypto)
 
 # Socket 封装库
 add_library(socket STATIC net/socket.cpp)

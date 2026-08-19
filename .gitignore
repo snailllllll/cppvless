@@ -13,13 +13,6 @@ cmake-build-*/
 *.swo
 *~
 
-# Reference directory - Go implementation
-reference/**/*.go
-reference/**/*.mod
-reference/**/*.sum
-reference/**/go.sum
-reference/**/go.mod
-
 # Dependency directories
 vcpkg/
 third_party/
@@ -28,7 +21,14 @@ third_party/
 *.log
 logs/
 
-#test
+# Local dev / learning materials (not part of the shipped project)
+doc/dev/
+
+# Deploy / test-env temp files
+deploy.env
+*.tar.gz
+
+# Test directory (learning prototypes & ad-hoc scripts not shipped)
 tests/
 
 # Temporary files
@@ -37,16 +37,3 @@ tests/
 
 # Test modules (C++20 modules experiment, not part of project)
 test_modules/
-
-# Tests - learning prototypes not in CMakeLists
-tests/test_channel.cpp
-tests/test_coroutine_scheduler.cpp
-tests/test_eventfd.cpp
-tests/test_io_uring.cpp
-tests/test_worker_workflow.cpp
-tests/test_worker_workflow_simple.cpp
-tests/uringtest.cpp
-tests/vless_client.go
-
-# Go compiled binaries
-tests/vless_client

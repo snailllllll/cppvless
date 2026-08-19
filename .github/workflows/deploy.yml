@@ -141,6 +141,7 @@ jobs:
               --network host \
               --privileged \
               --restart unless-stopped \
+              -v /etc/vmess:/etc/vmess \
               -v /var/lib/vmess/certs:/var/lib/vmess/certs \
               ${{ env.DOCKER_IMAGE }}:latest \
               1080 ${LOG_LEVEL} \

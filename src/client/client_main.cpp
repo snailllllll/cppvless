@@ -2,6 +2,7 @@
 #include "client/socks5_connection.h"
 #include "client/vless_client.h"
 #include "common/log.h"
+#include "common/config.h"
 #include "proxy/vless/validator.h"
 
 #include <csignal>
@@ -28,9 +29,11 @@ void signalHandler(int sig) {
 
 void printUsage(const char* prog) {
     std::cerr << "Usage: " << prog << " [options]\n"
+              << "  --config <path>        配置文件路径 (default: /etc/vmess/client.json)\n"
+              << "                        支持字段: socks5_port/remote/uuid/log_level/workers\n"
               << "  --socks5-port <port>   本地 SOCKS5 监听端口 (default: 1080)\n"
               << "  --remote <host:port>   远端 VLESS 服务器地址 (default: 127.0.0.1:443)\n"
-              << "  --uuid <uuid>          VLESS 用户 UUID (default: e3e740b0-2c3a-4b0e-9f1a-2c8f7d5e3a1b)\n"
+              << "  --uuid <uuid>          VLESS 用户 UUID (默认取配置文件；均无时用内置默认)\n"
               << "  --log <level>          日志级别: none|error|warn|info|debug (default: info)\n"
               << "  --log-file <path>      日志落盘文件（异步日志追加写入；默认仅 stderr）\n"
               << "  --workers <n>          worker 数 (default: CPU 核数)\n"
@@ -38,33 +41,47 @@ void printUsage(const char* prog) {
 }
 
 int main(int argc, char* argv[]) {
-    uint16_t socks5Port = 1080;
-    std::string remoteAddr = "127.0.0.1:443";
-    std::string uuidStr = "e3e740b0-2c3a-4b0e-9f1a-2c8f7d5e3a1b";
-    std::string logLevel = "info";
+    // 命令行参数（记录显式设置的覆盖项）
+    struct Cli {
+        bool socks5PortSet = false;
+        unsigned socks5Port = 1080;
+        bool remoteSet = false;
+        std::string remote;
+        bool uuidSet = false;
+        std::string uuid;
+        bool logLevelSet = false;
+        std::string logLevel;
+        bool workersSet = false;
+        unsigned workers = 0;
+    } cli;
+
+    std::string configPath;
     std::string logFile;
-    unsigned int workerCount = std::thread::hardware_concurrency();
-    if (workerCount == 0) {
-        workerCount = 1;
-    }
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         auto next = [&]() -> std::string {
             return (i + 1 < argc) ? argv[++i] : std::string();
         };
-        if (arg == "--socks5-port") {
-            socks5Port = static_cast<uint16_t>(std::atoi(next().c_str()));
+        if (arg == "--config") {
+            configPath = next();
+        } else if (arg == "--socks5-port") {
+            cli.socks5PortSet = true;
+            cli.socks5Port = static_cast<unsigned>(std::atoi(next().c_str()));
         } else if (arg == "--remote") {
-            remoteAddr = next();
+            cli.remoteSet = true;
+            cli.remote = next();
         } else if (arg == "--uuid") {
-            uuidStr = next();
+            cli.uuidSet = true;
+            cli.uuid = next();
         } else if (arg == "--log") {
-            logLevel = next();
+            cli.logLevelSet = true;
+            cli.logLevel = next();
         } else if (arg == "--log-file") {
             logFile = next();
         } else if (arg == "--workers") {
-            workerCount = std::max(1, std::atoi(next().c_str()));
+            cli.workersSet = true;
+            cli.workers = std::max(1u, static_cast<unsigned>(std::atoi(next().c_str())));
         } else if (arg == "-h" || arg == "--help") {
             printUsage(argv[0]);
             return 0;
@@ -73,6 +90,44 @@ int main(int argc, char* argv[]) {
             printUsage(argv[0]);
             return 1;
         }
+    }
+
+    // 配置路径：--config > VLESS_CLIENT_CONFIG > 默认
+    if (configPath.empty()) {
+        const char* env = std::getenv("VLESS_CLIENT_CONFIG");
+        if (env && env[0] != '\0') {
+            configPath = env;
+        }
+    }
+    if (configPath.empty()) {
+        configPath = "/etc/vmess/client.json";
+    }
+
+    // 加载客户端配置（可选；文件不存在时用内置默认，不报错）
+    vmess::common::ClientConfig ccfg;
+    std::string cfgWarn;
+    vmess::common::loadClientConfig(configPath, ccfg, cfgWarn);
+
+    // 命令行覆盖配置
+    if (cli.socks5PortSet) {
+        ccfg.socks5Port = static_cast<uint16_t>(cli.socks5Port);
+    }
+    if (cli.remoteSet) {
+        ccfg.remote = cli.remote;
+    }
+    if (cli.uuidSet) {
+        ccfg.uuid = cli.uuid;
+    }
+    if (cli.logLevelSet) {
+        ccfg.logLevel = cli.logLevel;
+    }
+    if (cli.workersSet) {
+        ccfg.workers = static_cast<int>(cli.workers);
+    }
+
+    // 兼容旧行为：任何来源都未提供 UUID 时使用内置默认
+    if (ccfg.uuid.empty()) {
+        ccfg.uuid = "e3e740b0-2c3a-4b0e-9f1a-2c8f7d5e3a1b";
     }
 
     // 日志落盘：优先 --log-file，其次 VLESS_LOG_FILE 环境变量
@@ -84,24 +139,33 @@ int main(int argc, char* argv[]) {
     }
     vmess::common::Logger::instance().setLogFile(logFile);
 
-    vmess::common::setLogLevel(vmess::common::parseLogLevel(logLevel));
+    vmess::common::setLogLevel(vmess::common::parseLogLevel(ccfg.logLevel));
 
     // 解析 UUID
     std::array<uint8_t, 16> uuid{};
-    if (!vmess::proxy::vless::Validator::parseUuid(uuidStr, uuid)) {
-        std::cerr << "[ClientMain] Invalid uuid: " << uuidStr << std::endl;
+    if (!vmess::proxy::vless::Validator::parseUuid(ccfg.uuid, uuid)) {
+        std::cerr << "[ClientMain] Invalid uuid: " << ccfg.uuid << std::endl;
         return 1;
     }
 
     // 解析远端地址
-    vmess::client::VlessClientConfig cfg = vmess::client::VlessClientConfig::fromString(remoteAddr);
+    vmess::client::VlessClientConfig cfg = vmess::client::VlessClientConfig::fromString(ccfg.remote);
     cfg.uuid = uuid;
 
+    // worker 数（0 = 自动）
+    unsigned int workerCount = ccfg.workers > 0
+        ? static_cast<unsigned int>(ccfg.workers)
+        : std::thread::hardware_concurrency();
+    if (workerCount == 0) {
+        workerCount = 1;
+    }
+
     std::cerr << "=== VLESS Client (SOCKS5) ===" << std::endl;
-    std::cerr << "Socks5 Listen: 127.0.0.1:" << socks5Port << std::endl;
+    std::cerr << "Config: " << configPath << (cfgWarn.empty() ? "" : " (using defaults)") << std::endl;
+    std::cerr << "Socks5 Listen: 127.0.0.1:" << ccfg.socks5Port << std::endl;
     std::cerr << "Remote: " << cfg.remoteHost << ":" << cfg.remotePort << std::endl;
-    std::cerr << "Uuid: " << uuidStr << std::endl;
-    std::cerr << "LogLevel: " << logLevel << std::endl;
+    std::cerr << "Uuid: " << ccfg.uuid << std::endl;
+    std::cerr << "LogLevel: " << ccfg.logLevel << std::endl;
     std::cerr << "Workers: " << workerCount << std::endl;
     std::cerr << "Protocol: VLESS (plaintext, no TLS)" << std::endl;
     std::cerr << "Press Ctrl+C to stop" << std::endl;
@@ -139,7 +203,7 @@ int main(int argc, char* argv[]) {
         for (unsigned int i = 0; i < workerCount; ++i) {
             workers.emplace_back([&, i]() {
                 try {
-                    loops[i]->run(socks5Port, enableReusePort);
+                    loops[i]->run(ccfg.socks5Port, enableReusePort);
                 } catch (const std::exception& e) {
                     {
                         std::lock_guard<std::mutex> lock(errorMu);

@@ -8,7 +8,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 COPY vmess_client /usr/local/bin/vmess_client
 RUN chmod +x /usr/local/bin/vmess_client
+# 配置目录：client.json 可包含 uuid/remote/socks5_port/log_level/workers
+VOLUME ["/etc/vmess"]
+EXPOSE 1080/tcp
 # 默认参数可通过 docker run 追加覆盖：
 #   --socks5-port 1080 --remote <server-host>:<port> --uuid <uuid>
 ENTRYPOINT ["/usr/local/bin/vmess_client"]
-CMD ["--socks5-port", "1080", "--remote", "127.0.0.1:443", "--log", "warn"]
+CMD ["--config", "/etc/vmess/client.json"]

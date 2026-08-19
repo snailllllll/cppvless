@@ -1,6 +1,7 @@
 #include "server/event_loop.h"
 #include "server/vless_connection.h"
 #include "common/log.h"
+#include "common/config.h"
 #include "proxy/vless/validator.h"
 #include "net/tls.h"
 #include <cstdlib>
@@ -36,11 +37,16 @@ namespace {
 void printUsage(const char* prog) {
     std::cerr <<
         "Usage: " << prog << " [port] [loglevel] [workers]\n"
+        "       " << prog << " [--config <path>]\n"
         "       " << prog << " --tls-port <port> [--cert <path> --key <path>]\n"
         "                       [--cert-dir <dir>] [--cert-days <days>]\n"
         "                       [port] [loglevel] [workers]\n"
         "\n"
         "Options:\n"
+        "  --config <path>     配置文件路径（默认 /etc/vmess/config.json，或\n"
+        "                      环境变量 VLESS_CONFIG）。首次启动自动生成并写入。\n"
+        "                      配置文件字段：port/log_level/workers/tls/users，\n"
+        "                      命令行参数可覆盖其中的对应字段。\n"
         "  --tls-port <port>  启用 TLS 端口（与明文端口并存；默认 443）\n"
         "  --cert <path>      证书文件（PEM）。与 --key 一起指定则用正式证书\n"
         "  --key <path>       私钥文件（PEM）\n"
@@ -53,6 +59,11 @@ void printUsage(const char* prog) {
         "  --tls-port 无证书             → 自签证书保底（自动生成，落盘复用）\n"
         "  --tls-port + 证书加载失败     → 报错退出（fail-fast，不静默降级）\n"
         "\n"
+        "用户认证（优先级：命令行/环境变量 > 配置文件）：\n"
+        "  1) 配置文件 users 字段（首次启动自动生成随机 UUID 并写入）\n"
+        "  2) 环境变量 VLESS_USERS（逗号分隔 UUID 列表，追加）\n"
+        "  3) 命令行位置参数不承载用户；未配置任何用户时随机生成\n"
+        "\n"
         "位置参数：port 明文端口（默认 1080）、loglevel（debug/info/warn/error）、\n"
         "          workers 线程数（默认 CPU 核数）\n";
 }
@@ -60,32 +71,51 @@ void printUsage(const char* prog) {
 } // namespace
 
 int main(int argc, char* argv[]) {
-    uint16_t port = 1080;
-    uint16_t tlsPort = 0;
-    std::string logLevel = "info";
-    unsigned int workerCount = std::thread::hardware_concurrency();
-    if (workerCount == 0) {
-        workerCount = 1;
-    }
+    // ── 命令行参数（记录显式设置的覆盖项）──────────────────────────────
+    struct Cli {
+        bool portSet = false;
+        unsigned port = 1080;
+        bool logLevelSet = false;
+        std::string logLevel = "info";
+        bool workersSet = false;
+        unsigned workers = 0;
+        bool tlsEnabledSet = false;
+        bool tlsPortSet = false;
+        unsigned tlsPort = 0;
+        bool certSet = false;
+        std::string cert;
+        bool keySet = false;
+        std::string key;
+        bool certDirSet = false;
+        std::string certDir;
+        bool certDaysSet = false;
+        int certDays = 365;
+    } cli;
 
-    vmess::net::TlsConfig tlsCfg;
+    std::string configPath;
     std::string logFile;
     std::vector<std::string> positional;
 
-    // 解析参数：支持命名参数（--xxx value）与位置参数混排
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "--tls-port" && i + 1 < argc) {
-            tlsCfg.enabled = true;
-            tlsPort = static_cast<uint16_t>(std::atoi(argv[++i]));
+        if (arg == "--config" && i + 1 < argc) {
+            configPath = argv[++i];
+        } else if (arg == "--tls-port" && i + 1 < argc) {
+            cli.tlsEnabledSet = true;
+            cli.tlsPortSet = true;
+            cli.tlsPort = static_cast<unsigned>(std::atoi(argv[++i]));
         } else if (arg == "--cert" && i + 1 < argc) {
-            tlsCfg.certFile = argv[++i];
+            cli.certSet = true;
+            cli.cert = argv[++i];
         } else if (arg == "--key" && i + 1 < argc) {
-            tlsCfg.keyFile = argv[++i];
+            cli.keySet = true;
+            cli.key = argv[++i];
         } else if (arg == "--cert-dir" && i + 1 < argc) {
-            tlsCfg.certDir = argv[++i];
+            cli.certDirSet = true;
+            cli.certDir = argv[++i];
         } else if (arg == "--cert-days" && i + 1 < argc) {
-            tlsCfg.certDays = std::max(1, std::atoi(argv[++i]));
+            cli.certDaysSet = true;
+            cli.certDays = std::max(1, std::atoi(argv[++i]));
         } else if (arg == "--log-file" && i + 1 < argc) {
             logFile = argv[++i];
         } else if (arg == "-h" || arg == "--help") {
@@ -101,34 +131,81 @@ int main(int argc, char* argv[]) {
     }
 
     if (!positional.empty()) {
-        port = static_cast<uint16_t>(std::atoi(positional[0].c_str()));
+        cli.portSet = true;
+        cli.port = static_cast<unsigned>(std::atoi(positional[0].c_str()));
     }
     if (positional.size() > 1) {
-        logLevel = positional[1];
+        cli.logLevelSet = true;
+        cli.logLevel = positional[1];
     }
     if (positional.size() > 2) {
-        workerCount = std::max(1, std::atoi(positional[2].c_str()));
+        cli.workersSet = true;
+        cli.workers = std::max(1u, static_cast<unsigned>(std::atoi(positional[2].c_str())));
     }
 
-    // 证书语义校验：--cert/--key 必须成对
-    if (tlsCfg.certFile.empty() != tlsCfg.keyFile.empty()) {
+    // CLI 层证书成对校验
+    if (cli.certSet != cli.keySet) {
         std::cerr << "[Main] Error: --cert and --key must be specified together" << std::endl;
         return 1;
     }
 
-    // 日志落盘：优先 --log-file，其次 VLESS_LOG_FILE 环境变量
-    if (logFile.empty()) {
-        const char* env = std::getenv("VLESS_LOG_FILE");
+    // ── 配置路径：--config > VLESS_CONFIG > 默认 ────────────────────────
+    if (configPath.empty()) {
+        const char* env = std::getenv("VLESS_CONFIG");
         if (env && env[0] != '\0') {
-            logFile = env;
+            configPath = env;
         }
     }
-    vmess::common::Logger::instance().setLogFile(logFile);
+    if (configPath.empty()) {
+        configPath = "/etc/vmess/config.json";
+    }
 
-    vmess::common::setLogLevel(vmess::common::parseLogLevel(logLevel));
+    // ── 加载配置（首次启动自动生成随机 UUID 并落盘）────────────────────
+    vmess::common::ServerConfig cfg;
+    bool cfgCreated = false;
+    std::string cfgError;
+    if (!vmess::common::loadServerConfig(configPath, cfg, &cfgCreated, cfgError)) {
+        std::cerr << "[Main] Error: " << cfgError << std::endl;
+        return 1;
+    }
 
-    vmess::proxy::vless::Validator validator;
-    bool hasConfiguredUser = false;
+    // 命令行覆盖配置文件
+    if (cli.portSet) {
+        cfg.port = static_cast<uint16_t>(cli.port);
+    }
+    if (cli.logLevelSet) {
+        cfg.logLevel = cli.logLevel;
+    }
+    if (cli.workersSet) {
+        cfg.workers = static_cast<int>(cli.workers);
+    }
+    if (cli.tlsEnabledSet) {
+        cfg.tls.enabled = true;
+        if (cli.tlsPortSet) {
+            cfg.tls.port = static_cast<uint16_t>(cli.tlsPort);
+        }
+    }
+    if (cli.certSet) {
+        cfg.tls.certFile = cli.cert;
+    }
+    if (cli.keySet) {
+        cfg.tls.keyFile = cli.key;
+    }
+    if (cli.certDirSet) {
+        cfg.tls.certDir = cli.certDir;
+    }
+    if (cli.certDaysSet) {
+        cfg.tls.certDays = cli.certDays;
+    }
+
+    // 合并后证书成对校验（配置文件来源同样约束）
+    if (cfg.tls.certFile.empty() != cfg.tls.keyFile.empty()) {
+        std::cerr << "[Main] Error: tls cert_file and key_file must be specified together"
+                  << std::endl;
+        return 1;
+    }
+
+    // ── 用户：环境变量 VLESS_USERS 追加；仍无用户 → 生成随机并持久化 ────
     const char* usersEnv = std::getenv("VLESS_USERS");
     if (usersEnv && usersEnv[0] != '\0') {
         std::stringstream ss(usersEnv);
@@ -140,17 +217,65 @@ int main(int argc, char* argv[]) {
             token.erase(std::find_if(token.rbegin(), token.rend(), [](unsigned char ch) {
                 return !std::isspace(ch);
             }).base(), token.end());
-            if (!token.empty() && validator.addFromString(token)) {
-                hasConfiguredUser = true;
+            if (!token.empty()) {
+                vmess::common::UserConfig uc;
+                uc.uuid = token;
+                uc.name = "env";
+                cfg.users.push_back(std::move(uc));
             }
         }
     }
-    if (!hasConfiguredUser) {
-        // 保持旧行为：未配置时使用默认用户。
-        validator.addFromString("e3e740b0-2c3a-4b0e-9f1a-2c8f7d5e3a1b");
+    if (cfg.users.empty()) {
+        // 确保始终有可用用户：随机生成并回写配置文件
+        vmess::common::UserConfig uc;
+        uc.uuid = vmess::common::generateUuid();
+        uc.name = "default";
+        cfg.users.push_back(uc);
+        std::string writeErr;
+        vmess::common::writeServerConfig(configPath, cfg, writeErr);
+        if (!writeErr.empty()) {
+            std::cerr << "[Main] Warn: failed to persist generated user: " << writeErr << std::endl;
+        }
     }
 
-    // TLS 上下文创建（证书三级判定：正式证书 / 自签保底 / 失败退出）
+    // ── 日志 ─────────────────────────────────────────────────────────────
+    if (logFile.empty()) {
+        const char* env = std::getenv("VLESS_LOG_FILE");
+        if (env && env[0] != '\0') {
+            logFile = env;
+        }
+    }
+    vmess::common::Logger::instance().setLogFile(logFile);
+    vmess::common::setLogLevel(vmess::common::parseLogLevel(cfg.logLevel));
+
+    // ── 用户认证器 ───────────────────────────────────────────────────────
+    vmess::proxy::vless::Validator validator;
+    int validUsers = 0;
+    for (const auto& u : cfg.users) {
+        if (validator.addFromString(u.uuid)) {
+            ++validUsers;
+        } else {
+            std::cerr << "[Main] Warn: invalid uuid ignored: \"" << u.uuid << "\""
+                      << (u.name.empty() ? "" : " (name: " + u.name + ")") << std::endl;
+        }
+    }
+
+    // ── worker 数（0 = 自动）─────────────────────────────────────────────
+    unsigned int workerCount = cfg.workers > 0
+        ? static_cast<unsigned int>(cfg.workers)
+        : std::thread::hardware_concurrency();
+    if (workerCount == 0) {
+        workerCount = 1;
+    }
+
+    // ── TLS 上下文创建（证书三级判定：正式证书 / 自签保底 / 失败退出）────
+    vmess::net::TlsConfig tlsCfg;
+    tlsCfg.enabled = cfg.tls.enabled;
+    tlsCfg.certFile = cfg.tls.certFile;
+    tlsCfg.keyFile = cfg.tls.keyFile;
+    tlsCfg.certDir = cfg.tls.certDir;
+    tlsCfg.certDays = cfg.tls.certDays;
+
     std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)> tlsCtx(nullptr, SSL_CTX_free);
     std::string tlsWarn;
     if (tlsCfg.enabled) {
@@ -165,10 +290,13 @@ int main(int argc, char* argv[]) {
         tlsCtx.reset(ctx);
     }
 
+    // ── 启动信息 ─────────────────────────────────────────────────────────
     std::cerr << "=== VLESS Server ===" << std::endl;
-    std::cerr << "Port: " << port << std::endl;
+    std::cerr << "Config: " << configPath
+              << (cfgCreated ? " (generated on first run)" : "") << std::endl;
+    std::cerr << "Port: " << cfg.port << std::endl;
     if (tlsCfg.enabled) {
-        std::cerr << "TLS Port: " << tlsPort << std::endl;
+        std::cerr << "TLS Port: " << cfg.tls.port << std::endl;
         std::cerr << "TLS Cert: "
                   << (tlsCfg.certFile.empty() ? "self-signed (fallback)" : tlsCfg.certFile)
                   << std::endl;
@@ -178,9 +306,9 @@ int main(int argc, char* argv[]) {
     } else {
         std::cerr << "TLS: disabled" << std::endl;
     }
-    std::cerr << "LogLevel: " << logLevel << std::endl;
+    std::cerr << "LogLevel: " << cfg.logLevel << std::endl;
     std::cerr << "Workers: " << workerCount << std::endl;
-    std::cerr << "Users: " << validator.size() << std::endl;
+    std::cerr << "Users: " << validator.size() << " (valid " << validUsers << ")" << std::endl;
     std::cerr << "Protocol: VLESS"
               << (tlsCfg.enabled ? " + TLS (built-in)" : " (plaintext, no TLS)")
               << std::endl;
@@ -231,7 +359,7 @@ int main(int argc, char* argv[]) {
         for (size_t i = 0; i < loops.size(); ++i) {
             workers.emplace_back([&, i]() {
                 try {
-                    uint16_t runPort = (i < plainCount) ? port : tlsPort;
+                    uint16_t runPort = (i < plainCount) ? cfg.port : cfg.tls.port;
                     loops[i]->run(runPort, enableReusePort);
                 } catch (const std::exception& e) {
                     {
