@@ -24,6 +24,14 @@ VlessConnection::VlessConnection(int clientFd, net::IoUring& uring,
       stream_(*clientStream_) {}
 
 VlessConnection::~VlessConnection() {
+    // 明文模式（tlsCtx_ == nullptr）下 clientStream_ 仅是 rawStream_ 的别名
+    // （构造时赋值为 rawStream_.get()，不拥有所有权）。成员按声明逆序析构，
+    // clientStream_ 先于 rawStream_ 析构，若不先 release 会 double free：
+    //   clientStream_ → delete(AsyncStream) → rawStream_ → delete(AsyncStream) 两次
+    if (tlsCtx_ == nullptr) {
+        clientStream_.release();
+    }
+
     // 无论 closed_ 标记如何，析构时都必须释放 fd。
     // 半关闭路径会先置 closed_=true，若此处跳过 doClose 会泄漏 fd，
     // 最终触发 EMFILE，表现为“连一会儿就不正常”。
