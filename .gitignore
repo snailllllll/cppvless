@@ -1,11 +1,15 @@
 # Build outputs
 build/
 build-docker/
+build-local/
 cmake-build-*/
 *.o
 *.so
 *.a
 *.exe
+
+# Benchmark scripts (not shipped with the repo; usage documented in doc/26-benchmark-report.md)
+bench/
 
 # IDE files
 .vscode/

@@ -1,0 +1,15 @@
+mode,side,round,metric,cpu_max_pct
+l1,l1_cpp_plain,1,4017,0.0
+l1,l1_cpp_plain,2,3825,0.0
+l1,l1_cpp_plain,3,3781,0.0
+l1,l1_cpp_plain,4,3924,0.0
+l1,l1_cpp_plain,5,3910,0.0
+l1,l1_cpp_plain,6,3794,0.0
+l1,l1_cpp_plain,7,4041,0.0
+l1,l1_go_plain,1,3802,43.0
+l1,l1_go_plain,2,3991,45.0
+l1,l1_go_plain,3,3894,44.0
+l1,l1_go_plain,4,3858,44.0
+l1,l1_go_plain,5,3938,45.0
+l1,l1_go_plain,6,3912,45.0
+l1,l1_go_plain,7,3945,44.0
