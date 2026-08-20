@@ -17,20 +17,21 @@ VlessConnection::VlessConnection(int clientFd, net::IoUring& uring,
                                  SSL_CTX* tlsCtx)
     : clientFd_(clientFd), uring_(uring), validator_(validator), tlsCtx_(tlsCtx),
       rawStream_(std::make_unique<coro::AsyncStream>(clientFd, uring)),
-      clientStream_(tlsCtx_
-                        ? static_cast<net::Stream*>(
-                              new net::TlsStream(*rawStream_, tlsCtx_, true))
+      tlsStream_(tlsCtx_
+                     ? std::make_unique<net::TlsStream>(*rawStream_, tlsCtx_, true)
+                     : nullptr),
+      clientStream_(tlsStream_
+                        ? static_cast<net::Stream*>(tlsStream_.get())
                         : static_cast<net::Stream*>(rawStream_.get())),
       stream_(*clientStream_) {}
 
 VlessConnection::~VlessConnection() {
-    // 明文模式（tlsCtx_ == nullptr）下 clientStream_ 仅是 rawStream_ 的别名
-    // （构造时赋值为 rawStream_.get()，不拥有所有权）。成员按声明逆序析构，
-    // clientStream_ 先于 rawStream_ 析构，若不先 release 会 double free：
-    //   clientStream_ → delete(AsyncStream) → rawStream_ → delete(AsyncStream) 两次
-    if (tlsCtx_ == nullptr) {
-        clientStream_.release();
-    }
+    // 方案 A：所有权唯一归位。
+    // rawStream_ / tlsStream_ 各自唯一持有并释放自己管理的对象；clientStream_
+    // 只是视图指针（借用、不拥有），析构时无操作，因此不存在 double free，
+    // 也不依赖成员声明顺序或 release() 兜底。
+    // 析构逆序：stream_(引用) → clientStream_(无操作) → tlsStream_(delete
+    // TlsStream，其内部引用的 rawStream_ 此刻仍存活) → rawStream_(delete)。
 
     // 无论 closed_ 标记如何，析构时都必须释放 fd。
     // 半关闭路径会先置 closed_=true，若此处跳过 doClose 会泄漏 fd，
@@ -59,7 +60,7 @@ coro::Task<void> VlessConnection::clientTask() {
     try {
         // Phase 0: TLS 握手（配置了 --tls-port 时，TLS 层先于 VLESS 协议）
         if (tlsCtx_) {
-            auto* tlsStream = static_cast<net::TlsStream*>(clientStream_.get());
+            auto* tlsStream = static_cast<net::TlsStream*>(clientStream_);
             if (!co_await tlsStream->handshake()) {
                 LOG_ERROR("VlessConnection", "fd=", clientFd_, " TLS handshake failed");
                 finishClientTask();

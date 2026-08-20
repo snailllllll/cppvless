@@ -116,8 +116,14 @@ private:
     net::IoUring& uring_;
     const proxy::vless::Validator& validator_;
     SSL_CTX* tlsCtx_ = nullptr;                 // TLS 上下文（配置了 --tls-port 时非空）
+    // ── 所有权模型（方案 A：唯一所有权 + 视图指针）──────────────────────
+    // rawStream_ 唯一持有底层 AsyncStream；tlsStream_ 唯一持有 TLS 包装
+    // （仅 tlsCtx_ 非空时非空）；clientStream_ 是"当前激活流"的视图指针
+    // （借用，不拥有）。析构顺序（声明逆序）：stream_ → clientStream_(无操作)
+    // → tlsStream_ → rawStream_，TlsStream 内部引用 rawStream_ 始终有效。
     std::unique_ptr<coro::AsyncStream> rawStream_;  // 底层明文流（AsyncStream 实现）
-    std::unique_ptr<net::Stream> clientStream_; // 明文用 AsyncStream，TLS 用 TlsStream 包装 rawStream_
+    std::unique_ptr<net::TlsStream> tlsStream_;     // TLS 包装流（仅 TLS 模式拥有）
+    net::Stream* clientStream_ = nullptr;           // 当前激活流视图：明文→rawStream_，TLS→tlsStream_
     coro::UringBufferedStream stream_;     // 握手阶段使用的缓冲流（基于 clientStream_）
 
     coro::Task<void> clientTask_;
