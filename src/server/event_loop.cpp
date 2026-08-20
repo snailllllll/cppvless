@@ -35,7 +35,9 @@ void EventLoop::run(uint16_t listenPort, bool enableReusePort) {
         throw std::runtime_error("failed to bind listen socket");
     }
 
-    if (::listen(listenFd_, 128) < 0) {
+    // backlog 4096：与 v2ray/Xray 对齐。128 在高并发（400+ 连接）下 accept 队列
+    // 溢出，导致客户端连接排队 ~1.4s 的尾部延迟（实测 cpp p90 骤升而 go 正常）。
+    if (::listen(listenFd_, 4096) < 0) {
         close(listenFd_);
         throw std::runtime_error("failed to listen");
     }

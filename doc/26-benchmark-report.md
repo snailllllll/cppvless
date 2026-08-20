@@ -11,6 +11,8 @@
 
 ## 1. 结论速览
 
+### 1.1 2 核 2G（SA2.MEDIUM2，首轮基线）
+
 | 指标 | cpp-vless | go (v2ray) | 差距 |
 |---|---|---|---|
 | **L1 连接建立速率**（明文） | **3,910 conn/s** | **3,912 conn/s** | **打平（0.05%）** |
@@ -20,8 +22,23 @@
 
 - **连接建立打平**：修复 cpp server 的 double-free 崩溃后，两者并发建连能力无显著差异
 - **吞吐基本持平**：2 核内网下 cpp 与 go 端到端吞吐接近，cpp 略低 ~3%
-- **CPU 效率 go 更优**：cpp 的 io_uring+协程实现每 Gbps 多耗约 57% CPU，是最值得优化的点
-- 所有数据基于 7 轮 ABAB 交替压测的中位数，原始数据见 `doc/benchmark-data/`
+- **CPU 效率 go 更优**：2 核下 cpp 的 io_uring+协程每 Gbps 多耗约 57% CPU
+
+### 1.2 8 核 16G（SA4.2XLARGE16，高并发复测）
+
+| 指标 | cpp-vless | go (v2ray) | 差距 |
+|---|---|---|---|
+| **L1 连接建立**（并发 100–1000） | 7.1–7.6k conn/s | 7.1–7.6k conn/s | **打平** |
+| **L2 吞吐**（iperf3 -P 64/128） | 10.8–10.9 Gbps | 10.9 Gbps | **打平**（网络上限） |
+| **L2 CPU 效率**（-P 64/128） | **390–399%**（~4 核） | **498–501%**（~5 核） | **cpp 省 ~22% CPU** |
+| **HTTP 延迟**（并发 1200） | p99 **4.58ms** | p99 **4.75ms** | **打平** |
+| **连接内存**（2000 连接保持） | **45 MB** | **84–97 MB** | **cpp 省 ~54%** |
+
+- **高并发下 io_uring 优势显现**：同样顶到 10.9 Gbps 网络上限时，cpp 用 ~4 核 vs go ~5 核（省 ~22% CPU）——与 2 核下"cpp 多耗 CPU"结论**反转**
+- **无栈协程内存优势显著**：2000 并发连接下 cpp 常驻内存仅 go 的 ~50%（无栈协程 ~100B 帧 vs goroutine 2KB+ 栈）
+- **延迟打平**：修复 EMFILE 后，高并发 HTTP 下两端 p99 均 <5ms
+
+> 核心结论：**cpp 的 io_uring + 无栈协程优势在高并发（数百连接）+ 真实数据面 + 多核机型上才能体现**；低并发/单流场景与 go 打平或略低。所有数据基于 ABAB 交替多轮中位数，原始数据见 `doc/benchmark-data/`。
 
 ---
 
@@ -29,31 +46,37 @@
 
 ### 2.1 硬件拓扑（腾讯云南京 CVM 竞价实例，同 VPC 内网）
 
+两套规格独立压测：2 核 2G 为基线，8 核 16G 为高并发复测。拓扑一致：
+
 ```
 ┌─────────────────────────────────┐   ┌─────────────────────────────────┐
-│ 压测端  ins-5i4t05a8 (10.206.16.15)│   │ 被测端  ins-jbkczrgu (10.206.16.17)│
+│ 压测端  (8c: ins-9od8tycs 10.206.0.10)│   │ 被测端  (8c: ins-pjpl5zpi 10.206.0.4)│
 │  - Xray 1.8.24 客户端（3 条链路）  │◄─┘│  - cpp server / v2ray 交替       │
 │  - iperf3 client + proxychains   │   │  - iperf3 server :5201           │
 │  - bench_multi.py / bench_conn.py│   │  - nginx :80（HTTP 后端目标）     │
 └─────────────────────────────────┘   └─────────────────────────────────┘
-        内网延迟 < 1ms，无公网抖动，带宽充足（不存在带宽墙）
+        内网延迟 < 1ms，无公网抖动
 ```
 
-### 2.2 实例规格（两台相同，腾讯云官方数据）
+> ⚠️ **内网带宽波动**：腾讯云共享内网，实测在 4.3 ~ 11.5 Gbps 间波动（同子网其他租户干扰）。
+> L2 吞吐绝对数值受此影响；ABAB 交替 + 同机对比保证 cpp/go 相对公平。
 
-| 项 | 值 | 来源 |
-|---|---|---|
-| 机型 | **SA2.MEDIUM2**（标准型 SA2 家族） | 腾讯云 `DescribeInstanceTypeConfigs` |
-| vCPU / 内存 | **2 核 / 2 GB** | 腾讯云 API + 实例内 `lscpu` |
-| **CPU 型号** | **AMD EPYC 7K62 48-Core Processor** | 实例内 `lscpu` / `/proc/cpuinfo` |
-| **CPU 主频** | **~2.6 GHz**（实测 2595 MHz） | 实例内 `/proc/cpuinfo` |
-| 镜像 | Ubuntu Server 26.04 LTS 64 位（img-dk53t5vb） | 腾讯云 API |
-| 计费 | 竞价 SPOTPAID（按量） | — |
-| 系统盘 | 20G CLOUD_PREMIUM 云盘 | — |
-| 带宽 | 200 Mbps 按量（内网不占用） | — |
-| 网络 | 同一 VPC + 同一子网（内网互通） | — |
+### 2.2 实例规格（腾讯云官方数据 + 实例内实测）
 
-> 注：SA2 标准型为腾讯云 AMD EPYC 7K62 平台，主频 2.6GHz。本报告以实例内实测为准。
+| 规格 | 机型 | vCPU/内存 | CPU 型号 | 主频 | 实例 ID（被测/压测） |
+|---|---|---|---|---|---|
+| 基线 | **SA2.MEDIUM2**（标准型 SA2） | 2 核 / 2 GB | AMD EPYC 7K62 48-Core | ~2.6 GHz | ins-jbkczrgu / ins-5i4t05a8 |
+| 高并发 | **SA4.2XLARGE16**（标准型 SA4） | 8 核 / 16 GB | AMD EPYC 9K84 96-Core | ~2.6 GHz | ins-pjpl5zpi / ins-9od8tycs |
+
+| 公共项 | 值 |
+|---|---|
+| 镜像 | Ubuntu Server 26.04 LTS 64 位（img-dk53t5vb） |
+| 计费 | 竞价 SPOTPAID（按量） |
+| 系统盘 | 2核: 20G / 8核: 40G CLOUD_PREMIUM 云盘 |
+| 公网带宽 | 200 Mbps 按量（内网不占用） |
+| 网络 | 同一 VPC（vpc-egu78q6r），2核在 ap-nanjing-1，8核在 ap-nanjing-3（同 VPC 不同子网，各自互测） |
+
+> 机型信息来自腾讯云 `DescribeInstanceTypeConfigs` API；CPU 型号/主频来自实例内 `lscpu`。
 
 ### 2.3 被测版本
 
@@ -126,6 +149,31 @@ python3 bench/bench_multi.py --rounds 3 --conns 200 --duration 6 --mode l1
 ```
 
 **输出**：CSV 列 `mode,side,round,metric,cpu_max_pct`；终端输出每轮明细 + 中位数汇总 + 压测端 xray CPU。
+
+### 4.4 `bench_curl_latency.sh`（HTTP 高并发延迟，curl 并发）
+
+**位置**：压测端 `/opt/bench/bench_curl_latency.sh`
+
+```bash
+# 用法: ./bench_curl_latency.sh <socks端口> <名称> <并发> <请求数>
+/opt/bench/bench_curl_latency.sh 10883 CPP 400 1600
+/opt/bench/bench_curl_latency.sh 10882 GO 400 1600
+```
+
+原理：curl 并发（真实客户端行为），`-w %{time_total}` 收集 RTT，awk 输出 p50/p90/p95/p99/max。
+**注意**：不用 python `recv` 等 EOF 的脚本——那会引入"等待 FIN"的测量伪影（假 1s 延迟），curl 读 body 即返回。
+
+### 4.5 `bench_keepalive.py`（连接内存观测）
+
+**位置**：压测端 `/opt/bench/bench_keepalive.py`
+
+```bash
+# 用法: python3 bench_keepalive.py <socks端口> <名称> <连接数> <保持秒>
+python3 /opt/bench/bench_keepalive.py 10883 CPP 2000 18
+```
+
+原理：建立并保持 N 条 SOCKS5+VLESS 隧道（目标 nginx:80 不发请求，连接保持），配合被测端
+`grep VmRSS /proc/<pid>/status` 观测连接内存。目标不能用 iperf3 server（单连接模式会关闭多余连接）。
 
 ### 4.2 `bench_conn.py`（L1 底层脚本）
 
@@ -260,6 +308,61 @@ python3 bench/bench_multi.py --rounds 7 --duration 8 --mode l2 --out /tmp/bench_
 
 ---
 
+## 6.6 8 核高并发：L1 连接建立（SA4.2XLARGE16）
+
+| 并发 | cpp_plain (conn/s) | go_plain (conn/s) |
+|---|---|---|
+| 100 | 7589 | 7598 |
+| 200 | 7504 | 7495 |
+| 400 | 7327 | 7351 |
+| 600 | ~7130 | ~7120 |
+| 800 | ~7130 | ~7115 |
+| 1000 | ~7110 | ~7080 |
+
+- 3-5 轮中位数。并发 600+ 后速率平稳不再上升——**压测端 Python 线程/GIL 成瓶颈**（被测端 CPU 未打满：cpp 54% / go 38%）。
+- **结论：8 核下 cpp 与 go 持续打平**，绝对能力为 2 核的 ~1.8 倍。
+
+## 6.7 8 核高并发：L2 吞吐 + CPU 效率（iperf3 -P N）
+
+> ⚠️ 内网带宽波动（4.3~11.5 Gbps）。以下为高带宽窗口（~10.9 Gbps）数据，ABAB 交替保证相对公平；低带宽窗口两端同样打平（如 P=32 时 4.35 vs 4.36 Gbps）。
+
+| 并发流 P | cpp 吞吐 | go 吞吐 | cpp CPU | go CPU | 压测端 xray CPU |
+|---|---|---|---|---|---|
+| 8 | 10.8 Gbps | 10.9 Gbps | 334% | 304% | — |
+| 16 | 10.8 Gbps | 10.9 Gbps | 370% | 406% | 81% |
+| 32 | 10.9 Gbps | 10.9 Gbps | 379% | 468% | 95.5% |
+| 64 | **10.90 Gbps** | **10.90 Gbps** | **390%** | **501%** | 107% |
+| 128 | **10.80 Gbps** | **10.90 Gbps** | **399%** | **498%** | 116% |
+
+- **吞吐打平**：两端均顶到 ~10.9 Gbps 内网带宽上限（网络是硬瓶颈）。
+- **CPU 效率反转（关键发现）**：高并发下 cpp 用 **~4 核** 达成 go **~5 核** 的同样吞吐，**cpp 省 ~22% CPU**——与 2 核下"cpp 多耗 57%"结论相反。
+- **机理**：io_uring 批量提交 SQE + 减少系统调用，在连接多、读写频繁时收益放大；goroutine 调度（可抢占、M:N）在低并发时更成熟，高并发下开销上升。
+- 注：P=64/128 时压测端 xray CPU 达 107-116%（压测端接近瓶颈），绝对吞吐受此影响但两端一致。
+
+## 6.8 8 核高并发：HTTP 延迟（curl 并发，内网 nginx）
+
+> 用 curl 并发（真实客户端行为，读 body 即返回，不傻等 FIN）。修复 EMFILE 后数据。
+
+| 并发 | cpp p50/p90/p99 | go p50/p90/p99 |
+|---|---|---|
+| 400 | 1.40 / 2.61 / 6.55 ms | 1.39 / 2.67 / 5.23 ms |
+| 800 | 1.30 / 2.64 / 4.74 ms | 1.47 / 3.90 / 7.11 ms |
+| 1200 | 1.28 / 2.61 / 4.58 ms | 1.34 / 2.67 / 4.75 ms |
+
+- **延迟打平**：并发 1200 下两端 p99 均 <5ms。
+- **修复前对比**：修复 EMFILE 前 cpp 并发 400 时 p90=1.28s（10% 请求被 fd 耗尽阻塞），修复后 p90=2.61ms（消除 99.8% 尾部延迟）。见 §7.2。
+
+## 6.9 8 核高并发：连接内存（2000 连接保持）
+
+| 连接数 | cpp VmRSS | go VmRSS | 差距 |
+|---|---|---|---|
+| 2000 | **45 MB** | **84–97 MB** | **cpp 省 ~54%** |
+
+- **无栈协程内存优势**：cpp 每连接协程帧 ~100B vs go goroutine 2KB+ 栈（动态增长），高连接数下内存差异显性化。
+- 方法：`bench_keepalive.py` 建立并保持 N 条 SOCKS5+VLESS 隧道（目标 nginx:80 不发请求，连接保持），`/proc/<pid>/status` 读 VmRSS。
+
+---
+
 ## 7. 发现的严重问题与修复（详见 `doc/27-double-free-troubleshooting.md`）
 
 压测过程中发现 cpp server 在明文高频建连场景下**反复 segfault**（systemd NRestarts 一度达 19），导致服务端周期重启、数据失真。定位为 **`VlessConnection` 析构 double-free**（明文模式 `clientStream_` 与 `rawStream_` 指向同一对象，析构时双重 delete）。已修复并发布 v0.0.2：
@@ -268,21 +371,44 @@ python3 bench/bench_multi.py --rounds 7 --duration 8 --mode l2 --out /tmp/bench_
 - **验证**：本地 gdb 复现崩溃栈→修复；本地 3 轮共 15.7 万连接零崩溃；压测全程 `NRestarts=0`。
 - **影响**：修复后 L1 连接建立速率 cpp 由 ~3,000 提升至 ~3,900 conn/s 并与 go 打平。本报告所有数据均为**修复后**结果。
 
+### 7.2 高并发 EMFILE（fd 耗尽）——8 核复测新发现
+
+- **症状**：8 核高并发 HTTP 压测时 cpp p90 骤升到 1.28s，日志刷 `socket() failed` / `Accept failed: -24`（EMFILE），165 万条 ERROR。
+- **根因**：systemd 默认 `LimitNOFILE=1024`，8 核高并发（每连接 2-4 fd：客户端+目标+eventfd）瞬间打满 → accept 失败 + 连接排队。
+- **修复**（部署配置，非代码）：`/etc/systemd/system/vmess.service.d/nofile.conf` 设 `LimitNOFILE=65535`，重启后生效。
+- **验证**：并发 400 下 cpp p90 从 1.28s → 2.61ms（消除 99.8% 尾部延迟）；fd=36（空闲）正常。
+- **教训**：高并发压测前必须确认 `LimitNOFILE`，不能只看 `ulimit -n`（systemd 服务不继承 shell 限制）。
+
+### 7.3 高并发磁盘告警（日志爆炸）
+
+- **症状**：被测端磁盘 100%（系统盘告警），`/var/log/vmess.log` 13G + `syslog.1` 17G。
+- **根因**：vmess 以 **debug 级别**运行，高并发建连-断开下每条失败连接都记录 ERROR（8 核下日志量爆炸）。
+- **修复**：日志级别降为 `warn`（抑制正常握手失败噪音），truncate 日志，`journalctl --vacuum-size=100M`。
+- **验证**：修复后 10s 日志 0 增长，磁盘回落到 16%。
+
 ---
 
 ## 8. 结论与优化方向
 
 ### 8.1 结论
 
-1. **连接建立能力打平**：修复 double-free 后，2 核机型上 cpp 与 go 均可达 ~3,900 conn/s。
-2. **转发吞吐基本持平**：单流 cpp 1.58 vs go 1.63 Gbps（差 3%）；并发 2/4/8 流也不突破 ~1.6 Gbps 平台（cpp 略低 3–10%），瓶颈在网络链路而非服务端。
-3. **CPU 效率是主要差距**：cpp 每 Gbps 多耗 ~57% CPU，是最值得优化的方向。
+1. **连接建立能力打平**：2 核 ~3,900 conn/s、8 核 ~7.5k conn/s（瓶颈在压测端），cpp 与 go 均打平。
+2. **转发吞吐打平（受网络限制）**：2 核 ~1.6 Gbps、8 核 ~10.9 Gbps 内网上限，两端一致。
+3. **CPU 效率随场景反转**：
+   - 2 核低并发：cpp 每 Gbps 多耗 ~57% CPU（go 优）
+   - **8 核高并发（-P 64/128）：cpp 省 ~22% CPU**（cpp ~4 核 vs go ~5 核达同样吞吐）
+4. **内存优势（高连接数）**：2000 并发连接下 cpp 常驻内存仅为 go 的 ~54%（无栈协程 vs goroutine 栈）。
+5. **HTTP 延迟打平**：并发 1200 下两端 p99 <5ms（需正确配置 `LimitNOFILE`）。
+
+**总体判断**：cpp 的 io_uring + 无栈协程优势在高并发（数百连接）+ 真实数据面 + 多核机型上才充分体现（CPU、内存双优）；低并发/单流场景与 go 打平或略低。若目标场景是"大量并发用户 + 多核"，cpp 架构具备优势；若是低并发单机小流量，两者无显著差异。
 
 ### 8.2 优化方向（后续迭代）
 
-1. **CPU 效率**（最大差距）：减少内存拷贝（`RecvOp` 的 `buf→data` 两次拷贝 → 固定缓冲池/io_uring provided buffers）；批量提交 SQE（当前每连接独立提交）；减少系统调用次数。
-2. **TLS vs TLS 公平对比**：给 v2ray 配 TLS（当前 go 只有明文），补全对比矩阵。
-3. **更高并发压测**：压测端 Python 线程在并发 200 时成瓶颈，如需更高并发换 Go/多进程客户端。
+1. **压测端升级**（当前最大瓶颈）：Python 线程/GIL + 单 Xray 进程限制并发（L1 600+ 不升、L2 P=128 时压测端 116%），换 Go/多进程客户端或高规格压测端可测出服务端真实上限。
+2. **网络隔离**：当前共享内网带宽波动（4.3~11.5 Gbps）干扰 L2 绝对数值，可租用独享带宽/专线或同机多网卡。
+3. **TLS vs TLS 公平对比**：给 v2ray 配 TLS（当前 go 只有明文），补全矩阵。
+4. **cpp 极致优化**（高并发已优于 go，仍可深化）：provided buffers 零拷贝、批量提交 SQE、per-worker 缓冲池。
+5. **运维配置**：部署时必须设置 `LimitNOFILE` 高值 + 日志级别 warn，否则高并发下 EMFILE/磁盘写满。
 
 ---
 
