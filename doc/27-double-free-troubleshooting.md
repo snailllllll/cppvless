@@ -1,9 +1,9 @@
-# double-free 崩溃排障全流程记录
+# 排障记录：double-free 崩溃 + fd 资源问题
 
-> 状态：**已修复并验证**（v0.0.2）
-> 日期：2026-08-19
+> 状态：**已修复并验证**（v0.0.2）；fd 问题**已分析验证、方案已沉淀、未实施**
+> 日期：2026-08-19（double-free）、2026-08-20（fd 分析）
 > 关联：`doc/26-benchmark-report.md`（压测综合报告）、`bench/bench_multi.py`
-> 摘要：压测期间发现 cpp server 在高频明文建连场景反复 segfault（systemd NRestarts=19），定位为 `VlessConnection` 析构 double-free，修复后 15.7 万连接零崩溃。
+> 摘要：压测期间发现 cpp server 在高频明文建连场景反复 segfault（systemd NRestarts=19），定位为 `VlessConnection` 析构 double-free，修复后 15.7 万连接零崩溃。8 核高并发压测又遇 EMFILE，经实验验证为限额不足而非泄漏；无空闲超时是剩余防御性风险，修复方案见 §8。
 
 ---
 
@@ -196,11 +196,92 @@ journalctl -u vmess | grep ERROR    # 仅正常握手失败日志（建连-断�
 
 ---
 
-## 7. 相关文件
+## 8. fd 资源问题分析与验证（2026-08-20）
+
+> 状态：**已分析验证，修复方案已沉淀，暂未实施**（等待决策）
+> 背景：8 核高并发压测时 cpp server 出现 `Accept failed: -24`（EMFILE），需要区分是"fd 泄漏"还是"限额不足"，并对"僵尸连接永久占用 fd"的防御性风险给出方案。
+
+### 8.1 事件回顾：EMFILE 的根因是限额不足，不是泄漏
+
+- **症状**：8 核高并发 HTTP 压测时 cpp p90 骤升到 1.28s，日志刷 `socket() failed` / `Accept failed: -24`（EMFILE），165 万条 ERROR。
+- **根因**：systemd 默认 `LimitNOFILE=1024`，8 核高并发（每连接 2-4 fd：clientFd+targetFd+eventfd）瞬间打满。
+- **修复**（部署配置，非代码）：`/etc/systemd/system/vmess.service.d/nofile.conf` 设 `LimitNOFILE=65535`。
+- **验证**：并发 400 下 cpp p90 从 1.28s → 2.61ms（消除 99.8% 尾部延迟）。
+
+### 8.2 fd 生命周期（正常路径，代码级）
+
+```
+accept → clientFd → connections_[fd] = conn
+        └─ connectTarget → targetFd
+        └─ relay → clientTask 结束 → finishClientTask
+        └─ targetTask 结束 → closed_ = true
+        └─ cleanupClosedConnections: isClosed() → erase → ~VlessConnection → doClose
+        └─ doClose: cancelFd(两个fd) → close(targetFd) → close(clientFd) → 置 -1
+```
+
+- `doClose` 幂等（close 后置 -1）
+- TCP 半关闭：`shutdown(targetFd_, SHUT_RDWR)` 唤醒对端 recv → EOF → targetTask 结束 → `closed_` 置位
+
+### 8.3 泄漏验证实验（全部在 8 核机上实测）
+
+| 场景 | 方法 | 结果 |
+|---|---|---|
+| UDP 正常断开 | 200 轮 ASSOCIATE+数据+close | fd 回落基线 36，**无泄漏** |
+| UDP 主动关闭 | 200 会话保持后 close | fd 436→36 回落，**无泄漏** |
+| UDP 进程崩溃 | 200 子进程 `os._exit`（发 RST） | fd 恒 36，**无泄漏** |
+| UDP 半开悬挂 | 50 会话静默保持后关闭 | fd 136→36 回落，**无泄漏** |
+| TCP 高频建连 | 300s / 222.8 万连接 | 压测中 fd 平稳（~66），结束后回落 36，**无泄漏** |
+
+**结论**：代码静态分析曾预测"UDP 无 EOF → targetTask 卡死 → fd 泄漏"，被实验证伪——Linux `shutdown()` 会唤醒已 connect UDP socket 的挂起 `recvfrom` 返回 EOF，targetTask 能正常退出。**当前代码不存在 fd 泄漏**。
+
+### 8.4 剩余风险：无空闲超时（僵尸连接永久占用 fd）
+
+风险不在"泄漏"而在"**无 idle timeout**"。当客户端**静默失联**（TCP 连接既不发 FIN 也不发 RST：断网未触发 keepalive、客户端死锁、恶意连接）时：
+
+- 服务端 `co_await stream.read()` 永久挂起
+- 连接对象 + 2 个 fd 无限期占用
+- 攻击者可建立大量连接后静默保持 → 耗尽 fd → EMFILE 拒绝服务
+
+### 8.5 完整修复方案（按推荐优先级，未实施）
+
+| # | 方案 | 实现 | 风险 | 同类产品对标 |
+|---|---|---|---|---|
+| **A** | **空闲超时（Idle Timeout）** | 每连接记 `lastActivity`，relay 循环检查；或 `poll(fd, POLLIN, 超时)` 替代永久阻塞 read | 低 | v2ray/Xray：UDP 会话 60s 空闲回收 |
+| **B** | **心跳/保活探测** | 周期写探测，超时未响应则关闭 | 中 | Trojan/V2Ray mux：keepalive 区分死连接 |
+| **C** | **EventLoop 定期扫描** | 维护 `(fd, lastActivity)` 表，定时扫描超阈值连接强制 `doClose()` | 低 | Nginx `keepalive_timeout`；HAProxy `timeout client/server` |
+| **D** | **全局 fd 水位监控** | 定期统计 fd 数，超阈值告警/拒新连接 | 低 | 各反代 `max_conns` 连接数限制 |
+| **E** | **io_uring timeout op** | 用 `IORING_OP_TIMEOUT` 在超时后唤醒挂起协程（需扩展 `uring_awaitable.h`） | 中 | io_uring 生态事件循环标准做法 |
+
+### 8.6 同类产品/服务器最常用的做法（业界共识）
+
+1. **v2ray / Xray**（本项目直接对标）：UDP 会话 `connIdle` 60s 无流量销毁；inbound/outbound `ReadTimeout` 默认 60s。= 方案 A + 惰性回收
+2. **Nginx**：`keepalive_timeout`（默认 75s）+ `worker_connections` 限制总连接。= 方案 A + D
+3. **HAProxy / Envoy**：`timeout client/server`（10s-50s）；Envoy `idle_timeout`（HTTP/2 流 5min）。= 方案 A
+4. **ShadowSocks / Trojan**：依赖内核 keepalive + 应用层读超时。= 方案 A
+
+**业界共识**：**方案 A（per-connection idle timeout）最主流、最简单、最低风险**；**方案 C（周期扫描兜底）**作为第二道防线。
+
+### 8.7 推荐实施路径（待决策）
+
+1. **主方案 A**：
+   - UDP 会话：`relayUdpClientToTarget` / `relayUdpTargetToClient` 循环里，对 `clientStream.read()` 用 `poll(fd, POLLIN, 60_000)` 包装，60s 无数据则 `doClose()`（对标 v2ray UDP connIdle）
+   - TCP 会话：`copyStream` 的 read 加 idle timeout（如 5min，TCP 长连接场景）
+2. **兜底 C**：`EventLoop` 维护 `lastActivity` 周期扫描（如 5min），强制回收
+3. **进阶 E**：加入 `IORING_OP_TIMEOUT` 支持，内核级定时器唤醒，比 poll 更优雅、与现有架构一致
+
+> 待决策项：idle timeout 默认值（UDP 60s / TCP 5min）、是否先实现方案 A 还是直接做方案 E、客户端 `socks5_connection.cpp` 是否同步处理。
+
+---
+
+## 9. 相关文件
 
 | 文件 | 说明 |
 |---|---|
 | `src/server/vless_connection.cpp` | 修复文件（v0.0.2） |
 | `doc/26-benchmark-report.md` | 压测综合报告（含修复后数据） |
 | `bench/bench_multi.py` | 压测期间用的自动化脚本 |
+| `bench/bench_udp_leak*.py` | UDP 泄漏验证脚本（8.3 实验用） |
+| `bench/bench_vless_udp_raw.py` | 原始 VLESS UDP 压测脚本 |
+| `bench/bench_vless_udp_idle.py` | 僵尸会话验证脚本 |
+| `bench/bench_vless_udp_crash.py` | 客户端崩溃模拟脚本 |
 | `doc/dev/benchmark/03-second-round.md` | 复测记录（开发期） |
