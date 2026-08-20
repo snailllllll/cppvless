@@ -200,6 +200,7 @@ journalctl -u vmess | grep ERROR    # 仅正常握手失败日志（建连-断�
 
 > 状态：**已分析验证，修复方案已沉淀，暂未实施**（等待决策）
 > 背景：8 核高并发压测时 cpp server 出现 `Accept failed: -24`（EMFILE），需要区分是"fd 泄漏"还是"限额不足"，并对"僵尸连接永久占用 fd"的防御性风险给出方案。
+> 方案设计详见 `doc/dev/design/fd-idle-timeout-design.md`（未入库，本地 dev 目录）。
 
 ### 8.1 事件回顾：EMFILE 的根因是限额不足，不是泄漏
 
