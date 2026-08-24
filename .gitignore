@@ -8,9 +8,6 @@ cmake-build-*/
 *.a
 *.exe
 
-# Benchmark scripts (not shipped with the repo; usage documented in doc/26-benchmark-report.md)
-bench/
-
 # IDE files
 .vscode/
 .idea/
@@ -34,12 +31,15 @@ doc/dev/
 deploy.env
 *.tar.gz
 
-# Test directory (learning prototypes & ad-hoc scripts not shipped)
-tests/
-
 # Temporary files
 *.tmp
 *.bak
+__pycache__/
+*.pyc
 
 # Test modules (C++20 modules experiment, not part of project)
 test_modules/
+
+# CI 测试资产（v2026-08-24 起纳入版本库）
+# bench/ 与 tests/ 由一次性脚本升级为 CI 测试资产，随仓库分发
+# 敏感信息（UUID/token/密码）一律不入库，经 Gitea Actions Secrets 注入
