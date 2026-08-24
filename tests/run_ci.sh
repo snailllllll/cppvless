@@ -54,3 +54,4 @@ VLESS_TEST_UUID=$UUID python3 tests/vless_tls_test.py \
 
 echo "== ALL TESTS PASSED =="
 kill "$SERVER_PID" "$TARGET_PID"
+# trigger
