@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """VLESS+TLS 端到端测试：TLS 封装 VLESS 请求，验证服务器内置 TLS 终结"""
+import os
 import socket
 import ssl
 import struct
@@ -10,8 +11,9 @@ import time
 def build_vless_request(target_host, target_port):
     req = bytearray()
     req.append(0x00)  # version
-    req.extend(bytes([0xe3, 0xe7, 0x40, 0xb0, 0x2c, 0x3a, 0x4b, 0x0e,
-                      0x9f, 0x1a, 0x2c, 0x8f, 0x7d, 0x5e, 0x3a, 0x1b]))  # UUID
+    # UUID: 从环境变量 VLESS_TEST_UUID 读取（CI 动态注入），缺省用测试值
+    uuid_str = os.environ.get("VLESS_TEST_UUID", "e3e740b0-2c3a-4b0e-9f1a-2c8f7d5e3a1b")
+    req.extend(bytes.fromhex(uuid_str.replace('-', '')))
     req.append(0x00)  # addons len
     req.append(0x01)  # cmd TCP
     req.extend(struct.pack('>H', target_port))

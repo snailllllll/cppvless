@@ -158,6 +158,7 @@ public:
                 cout << "[Client] Echo verified: OK" << endl;
             } else {
                 cout << "[Client] Echo verified: MISMATCH" << endl;
+                ++g_failures;
             }
             return true;
         } else if (n == 0) {
@@ -211,6 +212,9 @@ private:
 
 // ============ 测试函数 ============
 
+// 全局失败计数（CI 门禁：任何验证失败以非零退出）
+int g_failures = 0;
+
 void testBasicConnection() {
     cout << "\n========================================" << endl;
     cout << "Test 1: Basic Connection Test" << endl;
@@ -221,6 +225,7 @@ void testBasicConnection() {
     
     // 启动服务器
     if (!server.start()) {
+        ++g_failures;
         return;
     }
     
@@ -238,6 +243,8 @@ void testBasicConnection() {
         auto client = make_unique<EchoClient>("127.0.0.1", port);
         if (client->connect()) {
             clients.push_back(std::move(client));
+        } else {
+            ++g_failures;
         }
         this_thread::sleep_for(chrono::milliseconds(50));
     }
@@ -261,6 +268,7 @@ void testEchoCommunication() {
     EchoServer server(port);
     
     if (!server.start()) {
+        ++g_failures;
         return;
     }
     
@@ -332,7 +340,10 @@ void testLargeData() {
                 cout << "[Client] Large data echo verified: OK" << endl;
             } else {
                 cout << "[Client] Large data echo verified: FAILED" << endl;
+                ++g_failures;
             }
+        } else {
+            ++g_failures;
         }
         
         client.close();
@@ -430,8 +441,8 @@ int main(int argc, char* argv[]) {
     testLargeData();
     
     cout << "\n========================================" << endl;
-    cout << "All tests completed!" << endl;
+    cout << "All tests completed! failures=" << g_failures << endl;
     cout << "========================================" << endl;
     
-    return 0;
+    return g_failures > 0 ? 1 : 0;
 }
