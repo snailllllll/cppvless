@@ -21,6 +21,9 @@ using namespace std;
 // 全局标志用于优雅退出
 atomic<bool> g_running{true};
 
+// 全局失败计数（CI 门禁：任何验证失败以非零退出）
+int g_failures = 0;
+
 void signalHandler(int sig) {
     (void)sig;
     g_running = false;
@@ -211,9 +214,6 @@ private:
 };
 
 // ============ 测试函数 ============
-
-// 全局失败计数（CI 门禁：任何验证失败以非零退出）
-int g_failures = 0;
 
 void testBasicConnection() {
     cout << "\n========================================" << endl;
