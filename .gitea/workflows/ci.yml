@@ -16,4 +16,5 @@ jobs:
 
       - name: Build & functional tests (container)
         run: |
-          docker run --rm -v "$PWD":/work -w /work ubuntu:22.04 bash tests/run_ci.sh
+          docker build -t vmess-ci -f tests/Dockerfile.ci .
+          docker run --rm vmess-ci

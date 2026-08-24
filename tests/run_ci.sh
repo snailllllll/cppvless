@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
-# CI 功能测试入口：构建 + 起服务 + 三个测试（在 ubuntu:22.04 容器内执行）
+# CI 功能测试入口：构建 + 起服务 + 三个测试（在 vmess-ci 镜像内执行）
+# 依赖（g++/cmake/liburing/libssl/python3）已由 tests/Dockerfile.ci 安装
 # 用法: bash tests/run_ci.sh
 set -e
-export DEBIAN_FRONTEND=noninteractive
-
-echo "== install deps =="
-apt-get update -qq
-apt-get install -y -qq --no-install-recommends \
-  build-essential g++-12 cmake liburing-dev libssl-dev python3 >/dev/null
 
 echo "== build =="
 # 强制静态链接 liburing（避免运行期符号名冲突），复用 build.sh 方法
