@@ -28,16 +28,20 @@ cat > /tmp/vmess/config.json <<CFG
   "host": "127.0.0.1",
   "log_level": "warn",
   "workers": 0,
-  "tls": {"enabled": true, "port": 8848, "cert_file": "", "key_file": "", "cert_days": 30},
+  "tls": {"enabled": true, "port": 8848, "cert_dir": "/tmp/vmess/certs", "cert_days": 30},
   "users": [{"uuid": "${UUID}", "name": "test"}]
 }
 CFG
-./build/src/vmess_server --config /tmp/vmess/config.json &
+VLESS_NO_AUTO_HOST=1 ./build/src/vmess_server --config /tmp/vmess/config.json &
 SERVER_PID=$!
 sleep 2
 
 echo "== test 1: socket echo =="
-./build/tests/test_socket_echo
+# socket echo test 内置 server 不应阻塞 CI；用 timeout 保护门禁
+if ! timeout 30 ./build/tests/test_socket_echo; then
+  echo "socket echo test failed or timed out" >&2
+  exit 1
+fi
 
 echo "== test 2: vless http (plain, direct VLESS) =="
 VLESS_TEST_UUID=$UUID python3 tests/vless_http_test.py \
@@ -49,4 +53,3 @@ VLESS_TEST_UUID=$UUID python3 tests/vless_tls_test.py \
 
 echo "== ALL TESTS PASSED =="
 kill "$SERVER_PID" "$TARGET_PID"
-# trigger

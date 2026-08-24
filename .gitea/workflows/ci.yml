@@ -17,4 +17,4 @@ jobs:
       - name: Build & functional tests (container)
         run: |
           docker build -t vmess-ci -f tests/Dockerfile.ci .
-          docker run --rm vmess-ci
+          docker run --rm --security-opt seccomp=unconfined vmess-ci

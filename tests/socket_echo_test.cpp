@@ -257,6 +257,7 @@ void testBasicConnection() {
     // 停止服务器
     g_running = false;
     serverThread.join();
+    g_running = true;
 }
 
 void testEchoCommunication() {
@@ -302,6 +303,7 @@ void testEchoCommunication() {
     
     g_running = false;
     serverThread.join();
+    g_running = true;
 }
 
 void testLargeData() {
@@ -351,6 +353,7 @@ void testLargeData() {
     
     g_running = false;
     serverThread.join();
+    g_running = true;
 }
 
 // ============ 主函数 ============
