@@ -210,12 +210,15 @@ std::string buildVlessLink(const std::string& host,
             link += "&sni=" + urlEncode(host);
         }
         link += "&fp=chrome";
-        // 自签证书（未配置正式证书）：固定证书指纹替代不安全的 allowInsecure=1。
-        // Xray 26.2.6+ 拒绝"allowInsecure 且无证书固定"的节点（v2rayN 9460 讨论）。
-        // pinSHA256 = 证书 DER 的 SHA-256（base64），语义对齐 Xray pinned_peer_cert_sha256。
+        // 自签证书（未配置正式证书）：固定证书指纹替代已移除的 allowInsecure。
+        // Xray 26.2.6+ 已移除 allowInsecure，必须用 pinnedPeerCertSha256（v2rayN 9460）。
+        // 格式：证书 DER 的 SHA-256 hex（Xray infra/conf 用 hex.DecodeString 解析，
+        // base64 会报 `encoding/hex: invalid byte`；hex 只含 0-9a-f，无需 URL 编码）。
+        // 字段：pcs 为 v2rayN 26.x 字段；pinSHA256 兼容旧版客户端（Shadowrocket 等）。
         if (cfg.tls.certFile.empty()) {
             if (!cfg.tls.certSha256.empty()) {
-                link += "&pinSHA256=" + urlEncode(cfg.tls.certSha256);
+                link += "&pcs=" + cfg.tls.certSha256;
+                link += "&pinSHA256=" + cfg.tls.certSha256;
             } else {
                 link += "&allowInsecure=1";  // 指纹不可用（异常场景）时回退旧行为
             }

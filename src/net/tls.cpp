@@ -156,19 +156,24 @@ long certRemainingSeconds(const std::string& certPem) {
     return rem;
 }
 
-/// Base64 编码（OpenSSL EVP_EncodeBlock，输出无换行）
-std::string base64Encode(const unsigned char* data, size_t len) {
-    if (len == 0) return {};
-    std::string out(((len + 2) / 3) * 4, '\0');
-    const int n = EVP_EncodeBlock(reinterpret_cast<unsigned char*>(&out[0]), data, (int)len);
-    out.resize((size_t)n);
+/// Hex 编码（小写，0-9a-f；hex 只含 URL 安全字符，无需再转义）
+std::string hexEncode(const unsigned char* data, size_t len) {
+    static const char* kHex = "0123456789abcdef";
+    std::string out;
+    out.reserve(len * 2);
+    for (size_t i = 0; i < len; ++i) {
+        out.push_back(kHex[data[i] >> 4]);
+        out.push_back(kHex[data[i] & 0x0F]);
+    }
     return out;
 }
 
-/// 计算证书指纹：证书 DER 的 SHA-256（base64）。
-/// 语义对齐 Xray pinned_peer_cert_sha256（GenerateCertHash = sha256(cert.Raw)），
-/// 供分享链接输出 pinSHA256= 供客户端固定证书。
-std::string certSha256Base64(const std::string& certPem) {
+/// 计算证书指纹：证书 DER 的 SHA-256（hex 小写，64 字符）。
+/// 语义对齐 Xray pinned_peer_cert_sha256（GenerateCertHash = sha256(cert.Raw)）。
+/// 格式要求来自 Xray infra/conf（hex.DecodeString）与 v2rayN 官方说明
+/// （Discussion #9460：纯 hex 或 OpenSSL 冒号分隔，二选一），base64 会报
+/// `encoding/hex: invalid byte`。
+std::string certSha256Hex(const std::string& certPem) {
     BIO* bio = BIO_new_mem_buf(certPem.data(), (int)certPem.size());
     if (!bio) return {};
     X509* x509 = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
@@ -184,7 +189,7 @@ std::string certSha256Base64(const std::string& certPem) {
             unsigned char hash[EVP_MAX_MD_SIZE];
             unsigned int hashLen = 0;
             if (EVP_Digest(der.data(), (size_t)derLen, hash, &hashLen, EVP_sha256(), nullptr) == 1) {
-                out = base64Encode(hash, hashLen);
+                out = hexEncode(hash, hashLen);
             }
         }
     }
@@ -219,7 +224,7 @@ SSL_CTX* createServerSslContext(TlsConfig& cfg, std::string* warnOut) {
             SSL_CTX_free(ctx);
             return nullptr;
         }
-        cfg.certSha256 = certSha256Base64(certPem);
+        cfg.certSha256 = certSha256Hex(certPem);
         if (warnOut) warnOut->clear();
         return ctx;
     }
@@ -249,7 +254,7 @@ SSL_CTX* createServerSslContext(TlsConfig& cfg, std::string* warnOut) {
                 SSL_CTX_free(ctx);
                 return nullptr;
             }
-            cfg.certSha256 = certSha256Base64(certPem);
+            cfg.certSha256 = certSha256Hex(certPem);
             if (warnOut) {
                 *warnOut = "self-signed fallback: reusing existing cert " + certPath;
             }
@@ -288,7 +293,7 @@ SSL_CTX* createServerSslContext(TlsConfig& cfg, std::string* warnOut) {
         SSL_CTX_free(ctx);
         return nullptr;
     }
-    cfg.certSha256 = certSha256Base64(certPem);
+    cfg.certSha256 = certSha256Hex(certPem);
 
     if (warnOut) {
         *warnOut = "self-signed fallback active: generated new cert " + certPath;

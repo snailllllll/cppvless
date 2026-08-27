@@ -18,9 +18,10 @@ struct TlsConfig {
     std::string keyFile;            // --key
     std::string certDir;            // --cert-dir 自签证书落盘目录
     int certDays = 365;             // --cert-days 自签有效期（天）
-    // 实际加载的服务器证书指纹：证书 DER 的 SHA-256（base64）。
+    // 实际加载的服务器证书指纹：证书 DER 的 SHA-256（hex 小写，64 字符）。
     // 语义与 Xray pinned_peer_cert_sha256 一致（sha256(cert.Raw)），
-    // 供分享链接输出 pinSHA256= 供客户端固定证书（比 allowInsecure 更安全）。
+    // 格式要求 hex（Xray infra/conf 用 hex.DecodeString 解析；base64 会报错），
+    // 供分享链接输出 pcs=/pinSHA256= 供客户端固定证书（替代已移除的 allowInsecure）。
     std::string certSha256;
 };
 
