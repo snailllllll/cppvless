@@ -349,6 +349,8 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         tlsCtx.reset(ctx);
+        // 回填证书指纹，供分享链接输出 pinSHA256=（替代不安全 allowInsecure=1）
+        cfg.tls.certSha256 = tlsCfg.certSha256;
     }
 
     // ── 6. host 自动探测（未配置公网地址时尝试获取本机公网 IP）──────────

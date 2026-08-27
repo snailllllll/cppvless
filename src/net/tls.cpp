@@ -17,6 +17,7 @@
 #include <ctime>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
 namespace vmess {
 namespace net {
@@ -155,9 +156,45 @@ long certRemainingSeconds(const std::string& certPem) {
     return rem;
 }
 
+/// Base64 编码（OpenSSL EVP_EncodeBlock，输出无换行）
+std::string base64Encode(const unsigned char* data, size_t len) {
+    if (len == 0) return {};
+    std::string out(((len + 2) / 3) * 4, '\0');
+    const int n = EVP_EncodeBlock(reinterpret_cast<unsigned char*>(&out[0]), data, (int)len);
+    out.resize((size_t)n);
+    return out;
+}
+
+/// 计算证书指纹：证书 DER 的 SHA-256（base64）。
+/// 语义对齐 Xray pinned_peer_cert_sha256（GenerateCertHash = sha256(cert.Raw)），
+/// 供分享链接输出 pinSHA256= 供客户端固定证书。
+std::string certSha256Base64(const std::string& certPem) {
+    BIO* bio = BIO_new_mem_buf(certPem.data(), (int)certPem.size());
+    if (!bio) return {};
+    X509* x509 = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
+    BIO_free(bio);
+    if (!x509) return {};
+
+    std::string out;
+    const int derLen = i2d_X509(x509, nullptr);
+    if (derLen > 0) {
+        std::vector<unsigned char> der((size_t)derLen);
+        unsigned char* p = der.data();
+        if (i2d_X509(x509, &p) == derLen) {
+            unsigned char hash[EVP_MAX_MD_SIZE];
+            unsigned int hashLen = 0;
+            if (EVP_Digest(der.data(), (size_t)derLen, hash, &hashLen, EVP_sha256(), nullptr) == 1) {
+                out = base64Encode(hash, hashLen);
+            }
+        }
+    }
+    X509_free(x509);
+    return out;
+}
+
 } // namespace
 
-SSL_CTX* createServerSslContext(const TlsConfig& cfg, std::string* warnOut) {
+SSL_CTX* createServerSslContext(TlsConfig& cfg, std::string* warnOut) {
     if (!cfg.enabled) return nullptr;
 
     SSL_CTX* ctx = SSL_CTX_new(TLS_server_method());
@@ -182,6 +219,7 @@ SSL_CTX* createServerSslContext(const TlsConfig& cfg, std::string* warnOut) {
             SSL_CTX_free(ctx);
             return nullptr;
         }
+        cfg.certSha256 = certSha256Base64(certPem);
         if (warnOut) warnOut->clear();
         return ctx;
     }
@@ -211,6 +249,7 @@ SSL_CTX* createServerSslContext(const TlsConfig& cfg, std::string* warnOut) {
                 SSL_CTX_free(ctx);
                 return nullptr;
             }
+            cfg.certSha256 = certSha256Base64(certPem);
             if (warnOut) {
                 *warnOut = "self-signed fallback: reusing existing cert " + certPath;
             }
@@ -249,6 +288,7 @@ SSL_CTX* createServerSslContext(const TlsConfig& cfg, std::string* warnOut) {
         SSL_CTX_free(ctx);
         return nullptr;
     }
+    cfg.certSha256 = certSha256Base64(certPem);
 
     if (warnOut) {
         *warnOut = "self-signed fallback active: generated new cert " + certPath;

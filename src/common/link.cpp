@@ -204,9 +204,22 @@ std::string buildVlessLink(const std::string& host,
     std::string link = "vless://" + user.uuid + "@" + host + ":" + portBuf +
                        "?encryption=none&security=" + security +
                        "&type=tcp&headerType=none";
-    // 自签证书（未配置正式证书）时提示客户端跳过证书校验
-    if (security == "tls" && cfg.tls.certFile.empty()) {
-        link += "&allowInsecure=1";
+    if (security == "tls") {
+        // SNI：host 为域名时显式指定（IP 场景客户端默认以 address 兜底，无需输出）
+        if (!isValidIp(host)) {
+            link += "&sni=" + urlEncode(host);
+        }
+        link += "&fp=chrome";
+        // 自签证书（未配置正式证书）：固定证书指纹替代不安全的 allowInsecure=1。
+        // Xray 26.2.6+ 拒绝"allowInsecure 且无证书固定"的节点（v2rayN 9460 讨论）。
+        // pinSHA256 = 证书 DER 的 SHA-256（base64），语义对齐 Xray pinned_peer_cert_sha256。
+        if (cfg.tls.certFile.empty()) {
+            if (!cfg.tls.certSha256.empty()) {
+                link += "&pinSHA256=" + urlEncode(cfg.tls.certSha256);
+            } else {
+                link += "&allowInsecure=1";  // 指纹不可用（异常场景）时回退旧行为
+            }
+        }
     }
     if (!remark.empty()) {
         link += "#" + urlEncode(remark);

@@ -22,6 +22,7 @@ struct TlsConfigData {
     std::string keyFile;              // 私钥（PEM），与 certFile 成对
     std::string certDir = "./certs";  // 自签证书落盘目录
     int certDays = 365;               // 自签证书有效期
+    std::string certSha256;           // 运行时回填：服务器证书 DER 的 SHA-256（base64），用于分享链接 pinSHA256
 };
 
 /// 服务端配置（对应 /etc/vmess/config.json）

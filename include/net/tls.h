@@ -18,6 +18,10 @@ struct TlsConfig {
     std::string keyFile;            // --key
     std::string certDir;            // --cert-dir 自签证书落盘目录
     int certDays = 365;             // --cert-days 自签有效期（天）
+    // 实际加载的服务器证书指纹：证书 DER 的 SHA-256（base64）。
+    // 语义与 Xray pinned_peer_cert_sha256 一致（sha256(cert.Raw)），
+    // 供分享链接输出 pinSHA256= 供客户端固定证书（比 allowInsecure 更安全）。
+    std::string certSha256;
 };
 
 /**
@@ -28,11 +32,11 @@ struct TlsConfig {
  *   - 仅 --tls-port         → 自签保底：certDir 下已有有效证书则复用，
  *                             否则生成并落盘；剩余有效期 <30 天自动重签
  *
- * @param cfg TLS 配置
+ * @param cfg TLS 配置（非 const：成功加载证书后回填 cfg.certSha256）
  * @param warnOut 自签保底触发时的提示信息（供调用方打印日志）
  * @return 创建成功的 SSL_CTX（服务器角色），失败返回 nullptr
  */
-SSL_CTX* createServerSslContext(const TlsConfig& cfg, std::string* warnOut = nullptr);
+SSL_CTX* createServerSslContext(TlsConfig& cfg, std::string* warnOut = nullptr);
 
 /**
  * @brief 创建客户端 SSL_CTX（TLS_client_method）
