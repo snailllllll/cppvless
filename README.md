@@ -72,20 +72,30 @@ vmess_server --config /etc/vmess/config.json \
 
 ```
 Share link[0] (客户端扫码/粘贴导入):
-  vless://xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx@your.server.com:8848?encryption=none&security=tls&type=tcp&headerType=none&allowInsecure=1#cppvless
+  vless://xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx@your.server.com:8848?encryption=none&security=tls&type=tcp&headerType=none&sni=your.server.com&fp=chrome&pcs=<证书SHA-256 hex>&pinSHA256=<证书SHA-256 hex>#cppvless
 ██ ▀▀▀▀▀ █ ███▄ ...   （终端二维码，手机直接扫码）
 ```
 
+> `pcs` / `pinSHA256` 为服务器证书指纹（证书 DER 的 SHA-256，hex 64 位），替代已移除的 `allowInsecure`（Xray 26.2.6+ 强制要求证书固定，见 v2rayN [Discussion #9460](https://github.com/2dust/v2rayN/discussions/9460)）。正式证书场景链接不含该参数，走标准 CA 校验。
+
 ### 服务端独立使用
 
-服务端是一个**完整的、可独立部署的 VLESS 服务器**，不依赖本项目的客户端。任何支持 VLESS 协议的客户端软件都可以直接接入：
+服务端是一个**完整的、可独立部署的 VLESS 服务器**，不依赖本项目的客户端。任何支持 VLESS 协议的客户端软件都可以直接接入。
 
-- 桌面：v2rayN、v2rayNG、Clash / Clash Verge、sing-box 等
-- 移动端：Shadowrocket、Quantumult X、v2rayNG、Clash 等
+**经测试适配的客户端**：
+
+| 平台 | 客户端 | 状态 |
+|---|---|---|
+| 桌面 | v2rayN | ✅ 已实测（含 TLS + 自签证书 + `pcs` 证书固定） |
+| 移动端 | Shadowrocket | ✅ 已实测 |
+| 其他 | v2rayNG、Clash / Clash Verge、sing-box、Quantumult X 等 | ⚠️ 暂未测试 |
 
 接入方式：复制服务端日志输出的 `vless://` 分享链接（或扫描二维码），粘贴/扫码导入即可，无需额外配置。Docker 部署直接 `docker logs vmess | head -30` 查看。
 
-> 兼容性说明：服务端面向标准 VLESS 协议客户端设计（UUID 认证 + 可选 TLS）。本仓库自带的 `vmess_client` 为自研 SOCKS5 客户端，其与第三方服务端的兼容性未经系统性测试。
+> 兼容性说明：
+> - 服务端面向标准 VLESS 协议客户端设计（UUID 认证 + 可选 TLS）。目前仅 **v2rayN / Shadowrocket** 经实测验证，其余客户端暂未测试，理论上支持标准 VLESS 协议即可接入，如遇问题欢迎反馈。
+> - Xray 26.2.6+ 已移除 `allowInsecure`，自签证书节点必须固定证书指纹：分享链接中的 `pcs`（v2rayN）/ `pinSHA256`（Shadowrocket 等）参数即为证书 SHA-256（hex）。
+> - 本仓库自带的 `vmess_client` 为自研 SOCKS5 客户端，其与第三方服务端的兼容性未经系统性测试。
 
 ### 客户端
 
@@ -111,7 +121,7 @@ vmess_client --remote SERVER_IP:8848 --uuid <uuid> --socks5-port 1080
 vmess_client --remote SERVER_IP:8848 --uuid <uuid> --socks5-port 1080 --tls --tls-insecure
 ```
 
-> 配置字段/命令行参数说明：`tls_enabled`（或 `--tls`）启用 TLS 传输；`tls_insecure`（或 `--tls-insecure`）跳过对端证书校验（自签证书场景，对应分享链接中的 `allowInsecure=1`）。
+> 配置字段/命令行参数说明：`tls_enabled`（或 `--tls`）启用 TLS 传输；`tls_insecure`（或 `--tls-insecure`）跳过对端证书校验（自研客户端专用；第三方客户端请使用分享链接中的 `pcs`/`pinSHA256` 证书固定，Xray 26.2.6+ 已移除 `allowInsecure`）。
 
 之后把浏览器/应用的 SOCKS5 代理指向 `127.0.0.1:1080` 即可。
 
