@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace vmess {
+namespace vless {
 namespace proxy {
 namespace vless {
 
@@ -61,4 +61,4 @@ bool Validator::contains(const std::array<uint8_t, 16>& uuid) const {
 
 } // namespace vless
 } // namespace proxy
-} // namespace vmess
+} // namespace vless

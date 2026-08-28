@@ -1,5 +1,5 @@
-#ifndef VMESS_CORO_URING_AWAITABLE_H
-#define VMESS_CORO_URING_AWAITABLE_H
+#ifndef VLESS_CORO_URING_AWAITABLE_H
+#define VLESS_CORO_URING_AWAITABLE_H
 
 #include "net/io_uring.h"
 
@@ -13,7 +13,7 @@
 #include <sys/socket.h>
 #include <sys/uio.h>
 
-namespace vmess {
+namespace vless {
 namespace coro {
 
 // ── 前向声明 ──
@@ -55,7 +55,7 @@ struct UringOp {
  * completeFromCqe 直接忽略，不会 resume 已销毁的协程帧。
  *
  * 注意：必须是 thread_local（每个事件循环线程独立），
- * 与 cpp-http-server 的普通 static 不同——vmess 是多 worker 线程。
+ * 与 cpp-http-server 的普通 static 不同——vless 是多 worker 线程。
  */
 class PendingUringOps {
 public:
@@ -535,6 +535,6 @@ private:
 };
 
 } // namespace coro
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_CORO_URING_AWAITABLE_H
+#endif // VLESS_CORO_URING_AWAITABLE_H

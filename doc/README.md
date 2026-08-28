@@ -53,6 +53,6 @@ doc/README.md（本索引）
 
 ## 配置与部署
 
-- 用户认证：`/etc/vmess/config.json`（首次启动自动生成随机 UUID，见 `include/common/config.h`）
+- 用户认证：`/etc/vless/config.json`（首次启动自动生成随机 UUID，见 `include/common/config.h`）
 - 一键安装：根目录 `install.sh`；构建：`build.sh`
 - 详见项目根目录 `README.md`

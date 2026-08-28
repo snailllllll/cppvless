@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(vmess C CXX)
+project(vless C CXX)
 
 # 使用 C++20（不需要模块支持）
 set(CMAKE_CXX_STANDARD 20)

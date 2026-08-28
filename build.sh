@@ -12,8 +12,8 @@
 #   最终产物仅依赖 glibc + OpenSSL3（目标机普遍自带）
 #
 # 产物：
-#   build-docker/src/vmess_server
-#   build-docker/src/vmess_client
+#   build-docker/src/vless_server
+#   build-docker/src/vless_client
 #
 # 可覆盖环境变量：
 #   JOBS  并行编译数（默认 nproc）
@@ -47,10 +47,10 @@ docker run --rm \
 
 echo
 echo "==> 产物"
-ls -lh "${BUILD_DIR}/src/vmess_server" "${BUILD_DIR}/src/vmess_client"
+ls -lh "${BUILD_DIR}/src/vless_server" "${BUILD_DIR}/src/vless_client"
 
 echo
 echo "==> 动态依赖（应只剩 glibc + OpenSSL3，无 libstdc++/liburing）"
-readelf -d "${BUILD_DIR}/src/vmess_server" | grep -E 'NEEDED|RPATH|RUNPATH' || true
+readelf -d "${BUILD_DIR}/src/vless_server" | grep -E 'NEEDED|RPATH|RUNPATH' || true
 echo '---'
-readelf -d "${BUILD_DIR}/src/vmess_client" | grep -E 'NEEDED|RPATH|RUNPATH' || true
+readelf -d "${BUILD_DIR}/src/vless_client" | grep -E 'NEEDED|RPATH|RUNPATH' || true

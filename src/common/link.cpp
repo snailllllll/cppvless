@@ -17,7 +17,7 @@
 // 二维码生成库（nayuki/QR-Code-generator，MIT，单头文件，vendor 于 third_party）
 #include "qrcodegen.hpp"
 
-namespace vmess {
+namespace vless {
 namespace common {
 
 namespace {
@@ -296,4 +296,4 @@ std::string detectPublicIp(int timeoutMs) {
 }
 
 } // namespace common
-} // namespace vmess
+} // namespace vless

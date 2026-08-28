@@ -2,21 +2,21 @@
 
 > 状态：已实施（2026-08-15）
 > 关联：`include/coro/uring_awaitable.h`、`src/server/event_loop.cpp`、客户端关闭路径
-> 背景：与 `cpp-http-server`（自 vmess 分叉的 http-server 模块）技术底座收敛
+> 背景：与 `cpp-http-server`（自 vless 分叉的 http-server 模块）技术底座收敛
 
 ## 1. 动机
 
-`cpp-http-server` 与 vmess 共用相同技术底座（io_uring + C++20 协程），但 CQE → 协程的
+`cpp-http-server` 与 vless 共用相同技术底座（io_uring + C++20 协程），但 CQE → 协程的
 桥接机制走了两条不同的路线：
 
-| | vmess（旧） | cpp-http-server |
+| | vless（旧） | cpp-http-server |
 |---|---|---|
 | user_data 内容 | 编码（bit63 标志 + type + fd） | 裸指针（操作对象地址） |
 | 找协程方式 | `CoroutineRegistry` 查表（fd+type 键） | 指针直达，零查表 |
 | 完成行为 | `takeAndResume` 集中 switch(type) | 每个 op 自带 `static complete` 回调 |
 | 取消机制 | `eraseAll` + `!done()` 防御 | `PendingUringOps::cancelFd` 显式作废 |
 
-收敛方向：vmess 采用 cpp-http-server 的**指针直分发 + cancelFd** 模型。
+收敛方向：vless 采用 cpp-http-server 的**指针直分发 + cancelFd** 模型。
 
 ## 2. 新机制
 
@@ -65,7 +65,7 @@ class PendingUringOps {
 `cancelFd(fd)` 遍历该 fd 的挂起 op，把 `onComplete` 置空、`handle` 置空——CQE 迟到时
 `completeFromCqe` 看到空回调直接忽略，**不会 resume 已销毁的协程帧**。
 
-⚠️ 与 cpp-http-server 的关键差异：它用普通 `static` 单例（单线程）；vmess 是多 worker
+⚠️ 与 cpp-http-server 的关键差异：它用普通 `static` 单例（单线程）；vless 是多 worker
 线程，**必须保持 `thread_local`**，避免跨线程误 resume。
 
 ## 3. 改动清单

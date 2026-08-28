@@ -14,7 +14,7 @@
 
 当前依赖 **openresty 反向代理 + 手动证书配置** 才能提供 TLS 终结，运维成本高、配置分散（nginx.conf 手改、升级易丢）。
 
-**目标**：把 TLS 终结能力内置进 `vmess_server`，iOS 客户端直接 `VLESS+TLS+SNI` 连接服务器，不再依赖 openresty 与手动反代配置。
+**目标**：把 TLS 终结能力内置进 `vless_server`，iOS 客户端直接 `VLESS+TLS+SNI` 连接服务器，不再依赖 openresty 与手动反代配置。
 
 ## 2. 目标与非目标
 
@@ -44,7 +44,7 @@
 ## 4. 总体架构
 
 ```
-iOS ──VLESS+TLS──> vmess_server:TLS端口（内置 TLS 终结）──> 目标服务器
+iOS ──VLESS+TLS──> vless_server:TLS端口（内置 TLS 终结）──> 目标服务器
         │
         └─ 明文 VLESS 端口（保留，兼容现有 openresty 方案与调试）
 ```
@@ -136,7 +136,7 @@ co_await tlsHandshake(fd, sslCtx)
   启动期检测续签，1 年减少运维打扰）；
 - **启动期到期检测**：加载到存量自签证书时检查剩余有效期，**剩余 < 30 天则自动重新生成**
   （程序内检测，无需定时任务；避免自签静默过期导致 TLS 端口失效）；
-- 落盘到 `--cert-dir`（默认 `./certs`，容器内 `/etc/vmess/certs`），文件已存在则复用，
+- 落盘到 `--cert-dir`（默认 `./certs`，容器内 `/etc/vless/certs`），文件已存在则复用，
   证书跨重启稳定（已实现，见 `src/net/tls.cpp`）；
 - 启动日志打印 warning「自签证书保底生效」。
 
@@ -144,7 +144,7 @@ co_await tlsHandshake(fd, sslCtx)
 
 | 设计项 | 设计值 | 实现值 | 影响 |
 |---|---|---|---|
-| CN | 本机 IP（`getifaddrs` 探测） | 固定 `vmess-self-signed` | 不影响 TLS 功能；客户端本就不校验 CN |
+| CN | 本机 IP（`getifaddrs` 探测） | 固定 `vless-self-signed` | 不影响 TLS 功能；客户端本就不校验 CN |
 | SAN | `getifaddrs` 探测填充 `IP:127.0.0.1, IP:<本机IP>` | 未填充 SAN | 仅影响"显式 IP 校验"的客户端；iOS allowInsecure 场景无感知 |
 | 日志指纹 | 打印证书 SHA-256 指纹 | 未打印 | 排障小工具，可后续补充 |
 
@@ -162,7 +162,7 @@ co_await tlsHandshake(fd, sslCtx)
 ## 7. 配置设计
 
 ```
-vmess_server [--tls-port <port> --cert <path> --key <path> --cert-dir <dir> --cert-days <days>]
+vless_server [--tls-port <port> --cert <path> --key <path> --cert-dir <dir> --cert-days <days>]
              [port] [loglevel] [workers]
 ```
 
@@ -187,7 +187,7 @@ vmess_server [--tls-port <port> --cert <path> --key <path> --cert-dir <dir> --ce
 | 1 | Stream 抽象 + 协议层泛化（纯重构，明文行为不变） | CI 构建 + 明文链路回归 | ✅ 完成（明文并发 10/10 + 顺序 20/20） |
 | 2 | TlsStream + EventLoop TLS 端口 + 自签证书保底（6.3.1，OpenSSL API 生成） | 服务器本机 `openssl s_client` + 明文/ TLS 双链路 + 缺证书场景起服务 | ✅ 完成（见 §10 验证记录） |
 | 3 | CLI 配置 + 部署 | iOS 客户端 VLESS+TLS 实测被墙站点 | ✅ 代码完成（`--tls-port/--cert/--key/--cert-dir/--cert-days`）；iOS 真机待实测 |
-| 4 | 客户端（vmess_client）TLS：共用 TlsStream | iOS 客户端直连服务器 TLS 端口 | ⏳ 待做（D5） |
+| 4 | 客户端（vless_client）TLS：共用 TlsStream | iOS 客户端直连服务器 TLS 端口 | ⏳ 待做（D5） |
 
 ## 10. 验证方案
 
@@ -200,7 +200,7 @@ vmess_server [--tls-port <port> --cert <path> --key <path> --cert-dir <dir> --ce
 
 | 验证项 | 命令/场景 | 结果 |
 |---|---|---|
-| TLS 握手 + 自签证书 | `echo \| openssl s_client -connect 127.0.0.1:9443` | PASS（TLSv1.3，subject=vmess-self-signed） |
+| TLS 握手 + 自签证书 | `echo \| openssl s_client -connect 127.0.0.1:9443` | PASS（TLSv1.3，subject=vless-self-signed） |
 | VLESS+TLS 端到端 | `tests/vless_tls_test.py`（自签，CERT_NONE） | PASS（TLSv1.3，213B HTTP 响应） |
 | 明文回归（TLS 共存） | `tests/vless_http_test.py` 1080 → 18080 | PASS（5/5 并发） |
 | 正式证书路径 | `--cert/--key`（openssl 生成 rsa:2048） | PASS（subject=test.example.com） |
@@ -236,7 +236,7 @@ vmess_server [--tls-port <port> --cert <path> --key <path> --cert-dir <dir> --ce
         我们以落盘复用 + 启动检测续签换取更长有效期与更少运维打扰
 - [x] D3 明文端口 1080：保留并存；明文继续走现有 openresty 8443 反向代理，内置 TLS 端口为新增直连通道
 - [x] D4 fallback 伪装：v1 不做
-- [x] D5 客户端（vmess_client）TLS：作为阶段 4（服务器 TLS 稳定后），共用 TlsStream
+- [x] D5 客户端（vless_client）TLS：作为阶段 4（服务器 TLS 稳定后），共用 TlsStream
 
 补充决策：
 - 证书传参：CLI 参数 + 环境变量（VLESS_CERT/VLESS_KEY）都支持（参数优先）

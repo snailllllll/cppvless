@@ -1,5 +1,5 @@
-#ifndef VMESS_PROXY_VLESS_ENCRYPTION_H
-#define VMESS_PROXY_VLESS_ENCRYPTION_H
+#ifndef VLESS_PROXY_VLESS_ENCRYPTION_H
+#define VLESS_PROXY_VLESS_ENCRYPTION_H
 
 #include <cstdint>
 #include <cstddef>
@@ -7,7 +7,7 @@
 #include <memory>
 #include <array>
 
-namespace vmess {
+namespace vless {
 namespace proxy {
 namespace vless {
 
@@ -151,6 +151,6 @@ private:
 
 } // namespace vless
 } // namespace proxy
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_PROXY_VLESS_ENCRYPTION_H
+#endif // VLESS_PROXY_VLESS_ENCRYPTION_H

@@ -13,7 +13,7 @@
 
 #include <cstring>
 
-namespace vmess {
+namespace vless {
 namespace client {
 
 VlessClientConfig VlessClientConfig::fromString(const std::string& s) {
@@ -173,4 +173,4 @@ coro::Task<VlessClientHandshakeResult> vlessConnectAndHandshake(
 }
 
 } // namespace client
-} // namespace vmess
+} // namespace vless

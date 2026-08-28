@@ -2,7 +2,7 @@
 #include "coro/async_stream.h"
 #include "common/log.h"
 
-namespace vmess {
+namespace vless {
 namespace server {
 
 coro::Task<bool> VlessConnection::relayUdpClientToTarget() {
@@ -90,4 +90,4 @@ coro::Task<void> VlessConnection::relayUdpTargetToClient() {
 }
 
 } // namespace server
-} // namespace vmess
+} // namespace vless

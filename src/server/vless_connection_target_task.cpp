@@ -5,7 +5,7 @@
 #include <sys/socket.h>
 #include <exception>
 
-namespace vmess {
+namespace vless {
 namespace server {
 
 coro::Task<void> VlessConnection::targetTask(int targetFd) {
@@ -111,4 +111,4 @@ coro::Task<void> VlessConnection::targetTask(int targetFd) {
 }
 
 } // namespace server
-} // namespace vmess
+} // namespace vless

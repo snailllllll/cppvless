@@ -1,5 +1,5 @@
-#ifndef VMESS_CLIENT_VLESS_CLIENT_H
-#define VMESS_CLIENT_VLESS_CLIENT_H
+#ifndef VLESS_CLIENT_VLESS_CLIENT_H
+#define VLESS_CLIENT_VLESS_CLIENT_H
 
 #include "coro/async_stream.h"
 #include "coro/task.h"
@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace vmess {
+namespace vless {
 namespace client {
 
 /**
@@ -70,6 +70,6 @@ coro::Task<VlessClientHandshakeResult> vlessConnectAndHandshake(
     const proxy::vless::Request& vlessReq);
 
 } // namespace client
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_CLIENT_VLESS_CLIENT_H
+#endif // VLESS_CLIENT_VLESS_CLIENT_H

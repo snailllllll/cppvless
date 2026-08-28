@@ -7,7 +7,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-namespace vmess {
+namespace vless {
 namespace server {
 
 EventLoop::EventLoop(ConnectionFactory factory, unsigned int entries)
@@ -132,4 +132,4 @@ void EventLoop::cleanupClosedConnections() {
 }
 
 } // namespace server
-} // namespace vmess
+} // namespace vless

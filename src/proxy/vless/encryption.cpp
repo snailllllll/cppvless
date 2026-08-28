@@ -8,7 +8,7 @@
 #include <cstring>
 #include <stdexcept>
 
-namespace vmess {
+namespace vless {
 namespace proxy {
 namespace vless {
 
@@ -426,4 +426,4 @@ size_t EncryptionSession::encryptServer(const std::vector<uint8_t>& plaintext,
 
 } // namespace vless
 } // namespace proxy
-} // namespace vmess
+} // namespace vless

@@ -1,12 +1,12 @@
-#ifndef VMESS_PROXY_VLESS_VALIDATOR_H
-#define VMESS_PROXY_VLESS_VALIDATOR_H
+#ifndef VLESS_PROXY_VLESS_VALIDATOR_H
+#define VLESS_PROXY_VLESS_VALIDATOR_H
 
 #include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
 
-namespace vmess {
+namespace vless {
 namespace proxy {
 namespace vless {
 
@@ -27,6 +27,6 @@ private:
 
 } // namespace vless
 } // namespace proxy
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_PROXY_VLESS_VALIDATOR_H
+#endif // VLESS_PROXY_VLESS_VALIDATOR_H

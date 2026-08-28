@@ -21,8 +21,8 @@ on:
         default: ''
 
 env:
-  BINARY_NAME: vmess_server
-  DOCKER_IMAGE: vmess_server
+  BINARY_NAME: vless_server
+  DOCKER_IMAGE: vless_server
 
 jobs:
   # ══════════════════════════════════════════════
@@ -58,7 +58,7 @@ jobs:
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: vmess_server_binary
+          name: vless_server_binary
           path: build/src/${{ env.BINARY_NAME }}
           retention-days: 1
 
@@ -78,7 +78,7 @@ jobs:
       - name: Download binary artifact
         uses: actions/download-artifact@v4
         with:
-          name: vmess_server_binary
+          name: vless_server_binary
 
       - name: Prepare deployment package
         run: |
@@ -115,9 +115,9 @@ jobs:
             echo "Commit: ${{ github.sha }}"
 
             # 解压部署包
-            mkdir -p /tmp/vmess_deploy
-            tar -xzf /tmp/deploy.tar.gz -C /tmp/vmess_deploy
-            cd /tmp/vmess_deploy
+            mkdir -p /tmp/vless_deploy
+            tar -xzf /tmp/deploy.tar.gz -C /tmp/vless_deploy
+            cd /tmp/vless_deploy
 
             # 确保二进制可执行
             chmod +x ${{ env.BINARY_NAME }}
@@ -126,10 +126,10 @@ jobs:
             echo "=== 构建 Docker 镜像 ==="
             docker build -t ${{ env.DOCKER_IMAGE }}:latest .
 
-            # 停止并移除旧容器
+            # 清理同名旧容器（旧名 vmess 容器的退役由运维手动处理，不在此处自动删除）
             echo "=== 重启容器 ==="
-            docker stop vmess || true
-            docker rm vmess || true
+            docker stop vless || true
+            docker rm vless || true
 
             # 启动新容器（使用 host 网络模式）
             #   - 1080:  明文 VLESS（保持旧行为）
@@ -137,21 +137,21 @@ jobs:
             LOG_LEVEL="${{ github.event.inputs.log_level || 'info' }}"
             echo "日志等级: ${LOG_LEVEL}"
 
-            docker run -d --name vmess \
+            docker run -d --name vless \
               --network host \
               --privileged \
               --restart unless-stopped \
-              -v /etc/vmess:/etc/vmess \
-              -v /var/lib/vmess/certs:/var/lib/vmess/certs \
+              -v /etc/vless:/etc/vless \
+              -v /var/lib/vless/certs:/var/lib/vless/certs \
               ${{ env.DOCKER_IMAGE }}:latest \
               1080 ${LOG_LEVEL} \
-              --tls-port 8848 --cert-dir /var/lib/vmess/certs
+              --tls-port 8848 --cert-dir /var/lib/vless/certs
 
             # 清理临时文件
-            rm -rf /tmp/vmess_deploy /tmp/deploy.tar.gz
+            rm -rf /tmp/vless_deploy /tmp/deploy.tar.gz
 
             echo "=== 部署完成 ==="
-            docker ps | grep vmess
+            docker ps | grep vless
 
       - name: Health check
         uses: appleboy/ssh-action@v1.0.3
@@ -162,10 +162,10 @@ jobs:
           script: |
             set -e
             echo "=== 容器状态 ==="
-            docker ps | grep vmess
+            docker ps | grep vless
 
             echo "=== 查看日志（最后 20 行）==="
-            docker logs vmess --tail 20 || true
+            docker logs vless --tail 20 || true
 
             echo "=== 检查端口监听 ==="
             ss -tlnp | grep 1080 || echo "警告: 端口 1080 未监听"

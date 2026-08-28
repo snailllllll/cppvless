@@ -1,5 +1,5 @@
-#ifndef VMESS_NET_SOCKET_H
-#define VMESS_NET_SOCKET_H
+#ifndef VLESS_NET_SOCKET_H
+#define VLESS_NET_SOCKET_H
 
 #include <cstdint>
 #include <string>
@@ -222,4 +222,4 @@ uint32_t parseIPv4(const std::string& ip);
 
 }  // namespace SocketUtil
 
-#endif  // VMESS_NET_SOCKET_H
+#endif  // VLESS_NET_SOCKET_H

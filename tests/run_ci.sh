@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CI 功能测试入口：构建 + 起服务 + 三个测试（在 vmess-ci 镜像内执行）
+# CI 功能测试入口：构建 + 起服务 + 三个测试（在 vless-ci 镜像内执行）
 # 依赖（g++/cmake/liburing/libssl/python3）已由 tests/Dockerfile.ci 安装
 # 用法: bash tests/run_ci.sh
 set -e
@@ -11,28 +11,28 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_CXX_COMPILER=g++-12 \
   -DCMAKE_EXE_LINKER_FLAGS="-static-libstdc++ -static-libgcc" >/dev/null
 cmake --build build -j"$(nproc)"
-ls -la build/src/vmess_server build/src/vmess_client build/tests/test_socket_echo
+ls -la build/src/vless_server build/src/vless_client build/tests/test_socket_echo
 
 echo "== start target HTTP service =="
 python3 tests/target_http.py 18080 &
 TARGET_PID=$!
 sleep 1
 
-echo "== start vmess server (plain 1080 + tls 8848) =="
+echo "== start vless server (plain 1080 + tls 8848) =="
 UUID=$(cat /proc/sys/kernel/random/uuid)
 echo "Test UUID: $UUID"
-mkdir -p /tmp/vmess
-cat > /tmp/vmess/config.json <<CFG
+mkdir -p /tmp/vless
+cat > /tmp/vless/config.json <<CFG
 {
   "port": 1080,
   "host": "127.0.0.1",
   "log_level": "warn",
   "workers": 0,
-  "tls": {"enabled": true, "port": 8848, "cert_dir": "/tmp/vmess/certs", "cert_days": 30},
+  "tls": {"enabled": true, "port": 8848, "cert_dir": "/tmp/vless/certs", "cert_days": 30},
   "users": [{"uuid": "${UUID}", "name": "test"}]
 }
 CFG
-VLESS_NO_AUTO_HOST=1 ./build/src/vmess_server --config /tmp/vmess/config.json &
+VLESS_NO_AUTO_HOST=1 ./build/src/vless_server --config /tmp/vless/config.json &
 SERVER_PID=$!
 sleep 2
 

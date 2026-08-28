@@ -7,8 +7,8 @@
 ## 0. 项目一句话
 
 **C++20 + io_uring + 协程**实现的 **VLESS 代理**，同时包含：
-- **服务端**（`vmess_server`）：VLESS 入站，TCP + UDP 中继，支持 Vision/Encryption；
-- **客户端**（`vmess_client`）：本地 SOCKS5 代理，把流量经 VLESS 转发给远端服务端。
+- **服务端**（`vless_server`）：VLESS 入站，TCP + UDP 中继，支持 Vision/Encryption；
+- **客户端**（`vless_client`）：本地 SOCKS5 代理，把流量经 VLESS 转发给远端服务端。
 
 核心特色：**单线程事件循环 + 协程**，所有 IO 都走 io_uring，无阻塞调用；用协程把异步状态机写成顺序代码。
 
@@ -182,7 +182,7 @@ VLESS 的 UDP 是"UDP over TCP"：一条 TCP 连接承载，**每个数据报 = 
 ## 9. SOCKS5 客户端（`src/client` + `src/proxy/socks5`，近期新增）
 
 ```
-vmess_client（client_main.cpp）
+vless_client（client_main.cpp）
   └─ 工厂模式 EventLoop，工厂创建 Socks5Connection
 ```
 
@@ -233,10 +233,10 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 
 # 服务端（明文 VLESS，端口 1080）
-./build/src/vmess_server 1080 info 2
+./build/src/vless_server 1080 info 2
 
 # 客户端（SOCKS5 本地 1080 → 远端 VLESS）
-./build/src/vmess_client --socks5-port 1080 --remote <host>:<port> --uuid <uuid>
+./build/src/vless_client --socks5-port 1080 --remote <host>:<port> --uuid <uuid>
 ```
 
 ## 12. 已知的坑与待办（学习时留意）

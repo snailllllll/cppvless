@@ -1,5 +1,5 @@
-#ifndef VMESS_CLIENT_SOCKS5_CONNECTION_H
-#define VMESS_CLIENT_SOCKS5_CONNECTION_H
+#ifndef VLESS_CLIENT_SOCKS5_CONNECTION_H
+#define VLESS_CLIENT_SOCKS5_CONNECTION_H
 
 #include "client/vless_client.h"
 #include "client/socks5_udp_relay.h"
@@ -12,7 +12,7 @@
 #include <cstdint>
 #include <memory>
 
-namespace vmess {
+namespace vless {
 namespace client {
 
 /**
@@ -90,6 +90,6 @@ private:
 };
 
 } // namespace client
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_CLIENT_SOCKS5_CONNECTION_H
+#endif // VLESS_CLIENT_SOCKS5_CONNECTION_H

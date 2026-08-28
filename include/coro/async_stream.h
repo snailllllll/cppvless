@@ -1,5 +1,5 @@
-#ifndef VMESS_CORO_ASYNC_STREAM_H
-#define VMESS_CORO_ASYNC_STREAM_H
+#ifndef VLESS_CORO_ASYNC_STREAM_H
+#define VLESS_CORO_ASYNC_STREAM_H
 
 #include "coro/task.h"
 #include "coro/uring_awaitable.h"
@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <cstring>
 
-namespace vmess {
+namespace vless {
 namespace coro {
 
 /**
@@ -109,6 +109,6 @@ inline Task<bool> copyStream(net::Stream& dst, net::Stream& src, const bool& sto
 }
 
 } // namespace coro
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_CORO_ASYNC_STREAM_H
+#endif // VLESS_CORO_ASYNC_STREAM_H

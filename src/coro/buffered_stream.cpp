@@ -1,6 +1,6 @@
 #include "coro/buffered_stream.h"
 
-namespace vmess {
+namespace vless {
 namespace coro {
 
 UringBufferedStream::UringBufferedStream(net::Stream& stream)
@@ -41,4 +41,4 @@ std::vector<uint8_t> UringBufferedStream::drainRemaining() {
 }
 
 } // namespace coro
-} // namespace vmess
+} // namespace vless

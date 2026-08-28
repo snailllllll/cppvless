@@ -5,7 +5,7 @@
 #include <arpa/inet.h>
 #include <stdexcept>
 
-namespace vmess {
+namespace vless {
 namespace proxy {
 namespace vless {
 
@@ -235,4 +235,4 @@ std::string Request::addressString() const {
 
 } // namespace vless
 } // namespace proxy
-} // namespace vmess
+} // namespace vless

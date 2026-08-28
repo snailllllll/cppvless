@@ -1,12 +1,12 @@
-#ifndef VMESS_PROXY_VLESS_DECODER_H
-#define VMESS_PROXY_VLESS_DECODER_H
+#ifndef VLESS_PROXY_VLESS_DECODER_H
+#define VLESS_PROXY_VLESS_DECODER_H
 
 #include "proxy/vless/protocol.h"
 #include "proxy/vless/validator.h"
 #include "coro/buffered_stream.h"
 #include "coro/task.h"
 
-namespace vmess {
+namespace vless {
 namespace proxy {
 namespace vless {
 
@@ -42,6 +42,6 @@ private:
 
 } // namespace vless
 } // namespace proxy
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_PROXY_VLESS_DECODER_H
+#endif // VLESS_PROXY_VLESS_DECODER_H

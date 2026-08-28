@@ -6,7 +6,7 @@
 
 #include <cstring>
 
-namespace vmess {
+namespace vless {
 namespace net {
 
 namespace {
@@ -219,4 +219,4 @@ coro::Task<bool> TlsStream::flushWriteBio() {
 }
 
 } // namespace net
-} // namespace vmess
+} // namespace vless

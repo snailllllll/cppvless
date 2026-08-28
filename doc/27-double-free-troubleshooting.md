@@ -1,5 +1,7 @@
 # 排障记录：double-free 崩溃 + fd 资源问题
 
+> ⚠️ **历史记录说明**：本文为事发时的现场记录，文中 `vmess_server`/`/etc/vmess` 等名称为当时命名；项目现已更名 cppvless，二进制与路径为 `vless_server`/`/etc/vless`，命令请按新名对照执行。
+
 > 状态：**已修复并验证**（v0.0.2）；fd 问题**已分析验证、方案已沉淀、未实施**
 > 日期：2026-08-19（double-free）、2026-08-20（fd 分析）
 > 关联：`doc/26-benchmark-report.md`（压测综合报告）、`bench/bench_multi.py`

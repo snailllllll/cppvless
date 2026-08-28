@@ -1,5 +1,5 @@
-#ifndef VMESS_SERVER_EVENT_LOOP_RUNNER_H
-#define VMESS_SERVER_EVENT_LOOP_RUNNER_H
+#ifndef VLESS_SERVER_EVENT_LOOP_RUNNER_H
+#define VLESS_SERVER_EVENT_LOOP_RUNNER_H
 
 #include "server/event_loop.h"
 
@@ -8,13 +8,13 @@
 #include <string>
 #include <vector>
 
-namespace vmess {
+namespace vless {
 namespace server {
 
 /**
  * @brief 多 EventLoop 运行器（服务端 / 客户端共用）
  *
- * 收敛两个入口（vmess_server / vmess_client）中重复的：
+ * 收敛两个入口（vless_server / vless_client）中重复的：
  *   - 信号处理（SIGINT/SIGTERM → 停止所有 loop）
  *   - 每个 loop 一个线程启动、join
  *   - worker 异常捕获与统一错误传播
@@ -37,6 +37,6 @@ int runEventLoops(std::vector<std::unique_ptr<EventLoop>>& loops,
                   std::string* errorOut = nullptr);
 
 } // namespace server
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_SERVER_EVENT_LOOP_RUNNER_H
+#endif // VLESS_SERVER_EVENT_LOOP_RUNNER_H

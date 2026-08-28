@@ -1,5 +1,5 @@
-#ifndef VMESS_PROXY_SOCKS5_SOCKS5_H
-#define VMESS_PROXY_SOCKS5_SOCKS5_H
+#ifndef VLESS_PROXY_SOCKS5_SOCKS5_H
+#define VLESS_PROXY_SOCKS5_SOCKS5_H
 
 #include "coro/buffered_stream.h"
 #include "coro/task.h"
@@ -10,7 +10,7 @@
 #include <variant>
 #include <vector>
 
-namespace vmess {
+namespace vless {
 namespace proxy {
 namespace socks5 {
 
@@ -145,6 +145,6 @@ public:
 
 } // namespace socks5
 } // namespace proxy
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_PROXY_SOCKS5_SOCKS5_H
+#endif // VLESS_PROXY_SOCKS5_SOCKS5_H

@@ -27,11 +27,11 @@ curl -fsSL https://raw.githubusercontent.com/snailllllll/cppvless/main/install.s
 sudo bash install.sh
 ```
 
-安装后即可用服务端日志中输出的分享链接/二维码接入客户端。常用环境变量：`VMESS_PORT`、`VMESS_TLS_PORT`、`VMESS_PUBLIC_HOST`（公网地址，输出分享链接）、`VMESS_ENABLE_BBR=0`（关闭 BBR）、`VMESS_SOURCE=source`（现场编译）。
+安装后即可用服务端日志中输出的分享链接/二维码接入客户端。常用环境变量：`VLESS_PORT`、`VLESS_TLS_PORT`、`VLESS_PUBLIC_HOST`（公网地址，输出分享链接）、`VLESS_ENABLE_BBR=0`（关闭 BBR）、`VLESS_SOURCE=source`（现场编译）。
 
 ## 配置
 
-服务端从 `/etc/vmess/config.json` 读取配置（`--config <path>` 或 `VLESS_CONFIG` 覆盖）。**首次启动若文件不存在，自动生成并写入随机 UUID**：
+服务端从 `/etc/vless/config.json` 读取配置（`--config <path>` 或 `VLESS_CONFIG` 覆盖）。**首次启动若文件不存在，自动生成并写入随机 UUID**：
 
 ```json
 {
@@ -44,7 +44,7 @@ sudo bash install.sh
     "port": 8848,
     "cert_file": "",
     "key_file": "",
-    "cert_dir": "/var/lib/vmess/certs",
+    "cert_dir": "/var/lib/vless/certs",
     "cert_days": 365
   },
   "users": [
@@ -59,10 +59,10 @@ sudo bash install.sh
 
 ```bash
 # 明文 + TLS 双端口（自签证书保底）
-vmess_server --config /etc/vmess/config.json --log-file /var/log/vmess.log
+vless_server --config /etc/vless/config.json --log-file /var/log/vless.log
 
 # 使用正式证书
-vmess_server --config /etc/vmess/config.json \
+vless_server --config /etc/vless/config.json \
   --tls-port 8848 --cert /path/fullchain.pem --key /path/privkey.pem
 ```
 
@@ -90,16 +90,16 @@ Share link[0] (客户端扫码/粘贴导入):
 | 移动端 | Shadowrocket | ✅ 已实测 |
 | 其他 | v2rayNG、Clash / Clash Verge、sing-box、Quantumult X 等 | ⚠️ 暂未测试 |
 
-接入方式：复制服务端日志输出的 `vless://` 分享链接（或扫描二维码），粘贴/扫码导入即可，无需额外配置。Docker 部署直接 `docker logs vmess | head -30` 查看。
+接入方式：复制服务端日志输出的 `vless://` 分享链接（或扫描二维码），粘贴/扫码导入即可，无需额外配置。Docker 部署直接 `docker logs vless | head -30` 查看。
 
 > 兼容性说明：
 > - 服务端面向标准 VLESS 协议客户端设计（UUID 认证 + 可选 TLS）。目前仅 **v2rayN / Shadowrocket** 经实测验证，其余客户端暂未测试，理论上支持标准 VLESS 协议即可接入，如遇问题欢迎反馈。
 > - Xray 26.2.6+ 已移除 `allowInsecure`，自签证书节点必须固定证书指纹：分享链接中的 `pcs`（v2rayN）/ `pinSHA256`（Shadowrocket 等）参数即为证书 SHA-256（hex）。
-> - 本仓库自带的 `vmess_client` 为自研 SOCKS5 客户端，其与第三方服务端的兼容性未经系统性测试。
+> - 本仓库自带的 `vless_client` 为自研 SOCKS5 客户端，其与第三方服务端的兼容性未经系统性测试。
 
 ### 客户端
 
-客户端配置 `/etc/vmess/client.json`（可选，缺省用内置默认；`--config` 或 `VLESS_CLIENT_CONFIG` 覆盖）：
+客户端配置 `/etc/vless/client.json`（可选，缺省用内置默认；`--config` 或 `VLESS_CLIENT_CONFIG` 覆盖）：
 
 ```json
 {
@@ -114,11 +114,11 @@ Share link[0] (客户端扫码/粘贴导入):
 ```
 
 ```bash
-vmess_client --config /etc/vmess/client.json
+vless_client --config /etc/vless/client.json
 # 或命令行直接指定
-vmess_client --remote SERVER_IP:8848 --uuid <uuid> --socks5-port 1080
+vless_client --remote SERVER_IP:8848 --uuid <uuid> --socks5-port 1080
 # 服务端启用 TLS 时：
-vmess_client --remote SERVER_IP:8848 --uuid <uuid> --socks5-port 1080 --tls --tls-insecure
+vless_client --remote SERVER_IP:8848 --uuid <uuid> --socks5-port 1080 --tls --tls-insecure
 ```
 
 > 配置字段/命令行参数说明：`tls_enabled`（或 `--tls`）启用 TLS 传输；`tls_insecure`（或 `--tls-insecure`）跳过对端证书校验（自研客户端专用；第三方客户端请使用分享链接中的 `pcs`/`pinSHA256` 证书固定，Xray 26.2.6+ 已移除 `allowInsecure`）。
@@ -136,7 +136,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 ```
 
-产物：`build-docker/src/vmess_server`、`build-docker/src/vmess_client`。
+产物：`build-docker/src/vless_server`、`build-docker/src/vless_client`。
 
 ## 目录结构
 

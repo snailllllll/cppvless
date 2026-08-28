@@ -34,10 +34,10 @@ def ssh(host, cmd, timeout=180):
 
 
 def get_server_pids():
-    """被测端: 返回 (vmess_pid, v2ray_pid)。用 pgrep -x 精确匹配二进制名，避免匹配到 ssh 的 bash 自身"""
-    vmess = ssh(SUT_HOST, "pgrep -x vmess_server | head -1")
+    """被测端: 返回 (vless_pid, v2ray_pid)。用 pgrep -x 精确匹配二进制名，避免匹配到 ssh 的 bash 自身"""
+    vless = ssh(SUT_HOST, "pgrep -x vless_server | head -1")
     v2ray = ssh(SUT_HOST, "pgrep -x v2ray | head -1")
-    return vmess, v2ray
+    return vless, v2ray
 
 
 def switch_proxychains(port):
@@ -61,14 +61,14 @@ def run_l1_round(side, port, conns, duration):
 
 
 def sample_cpu_during(duration, pids, out_key):
-    """后台线程: 在被测端 pidstat 采样进程 CPU，存全局 dict。pids 为 (vmess_pid, v2ray_pid)"""
+    """后台线程: 在被测端 pidstat 采样进程 CPU，存全局 dict。pids 为 (vless_pid, v2ray_pid)"""
     global CPU_RESULTS
-    vmess_pid, v2ray_pid = pids
+    vless_pid, v2ray_pid = pids
     out = ssh(SUT_HOST,
-              f"pidstat -p {vmess_pid} -p {v2ray_pid} 1 {max(int(duration), 1)} 2>&1 | "
-              f"grep -E 'vmess_server|v2ray'",
+              f"pidstat -p {vless_pid} -p {v2ray_pid} 1 {max(int(duration), 1)} 2>&1 | "
+              f"grep -E 'vless_server|v2ray'",
               timeout=duration + 30)
-    rows = {"vmess": [], "v2ray": []}
+    rows = {"vless": [], "v2ray": []}
     for line in out.splitlines():
         parts = line.split()
         # 跳过表头和 Average 行；%CPU 为第 9 列 (index 8)
@@ -77,8 +77,8 @@ def sample_cpu_during(duration, pids, out_key):
                 cpu = float(parts[8])
             except ValueError:
                 continue
-            if "vmess_server" in line:
-                rows["vmess"].append(cpu)
+            if "vless_server" in line:
+                rows["vless"].append(cpu)
             elif "v2ray" in line:
                 rows["v2ray"].append(cpu)
     CPU_RESULTS[out_key] = rows
@@ -109,15 +109,15 @@ def run_l1(rounds, conns, duration):
     global CPU_RESULTS
     results = {}
     order = [("cpp_plain", PORTS["cpp_plain"]), ("go_plain", PORTS["go_plain"])]
-    vmess_pid, v2ray_pid = get_server_pids()
-    print(f"[L1] rounds={rounds} conns={conns} dur={duration}s pids: vmess={vmess_pid} v2ray={v2ray_pid}")
+    vless_pid, v2ray_pid = get_server_pids()
+    print(f"[L1] rounds={rounds} conns={conns} dur={duration}s pids: vless={vless_pid} v2ray={v2ray_pid}")
     for rnd in range(1, rounds + 1):
         for side, port in order:
-            # 只采被测方 CPU（cpp_plain 采 vmess，go_plain 采 v2ray）
-            pid = vmess_pid if side == "cpp_plain" else v2ray_pid
+            # 只采被测方 CPU（cpp_plain 采 vless，go_plain 采 v2ray）
+            pid = vless_pid if side == "cpp_plain" else v2ray_pid
             cpu_key = f"r{rnd}_{side}"
             CPU_RESULTS = {}
-            th = threading.Thread(target=sample_cpu_during, args=(duration, (vmess_pid, v2ray_pid), cpu_key))
+            th = threading.Thread(target=sample_cpu_during, args=(duration, (vless_pid, v2ray_pid), cpu_key))
             th.start()
             rate, ok, fail = run_l1_round(side, port, conns, duration)
             th.join(timeout=duration + 40)
@@ -160,13 +160,13 @@ def run_l2(rounds, duration, parallel=1):
     global CPU_RESULTS
     results = {}
     order = [("cpp_plain", PORTS["cpp_plain"]), ("go_plain", PORTS["go_plain"])]
-    vmess_pid, v2ray_pid = get_server_pids()
-    print(f"[L2] rounds={rounds} dur={duration}s parallel={parallel} pids: vmess={vmess_pid} v2ray={v2ray_pid}")
+    vless_pid, v2ray_pid = get_server_pids()
+    print(f"[L2] rounds={rounds} dur={duration}s parallel={parallel} pids: vless={vless_pid} v2ray={v2ray_pid}")
     for rnd in range(1, rounds + 1):
         for side, port in order:
             cpu_key = f"r{rnd}_{side}"
             CPU_RESULTS = {}
-            th_sut = threading.Thread(target=sample_cpu_during, args=(duration, (vmess_pid, v2ray_pid), cpu_key))
+            th_sut = threading.Thread(target=sample_cpu_during, args=(duration, (vless_pid, v2ray_pid), cpu_key))
             th_press = threading.Thread(target=sample_press_cpu_during, args=(duration, cpu_key))
             th_sut.start()
             th_press.start()
@@ -191,7 +191,7 @@ def summarize(results, metric="rate", is_l1=True):
         cpus = []
         for i in items:
             c = i.get("cpu", {})
-            key = "vmess" if side == "cpp_plain" else "v2ray"
+            key = "vless" if side == "cpp_plain" else "v2ray"
             vals_c = c.get(key, [])
             if vals_c:
                 cpus.append(max(vals_c))
@@ -215,7 +215,7 @@ def save_csv(results, outpath, mode):
             for i in items:
                 # side 形如 l1_cpp_plain / l2_go_plain，取最后一段判断进程名
                 base = side.split("_", 1)[1] if "_" in side else side
-                key = "vmess" if base == "cpp_plain" else "v2ray"
+                key = "vless" if base == "cpp_plain" else "v2ray"
                 c = i.get("cpu", {}).get(key, [])
                 metric = i["rate"] if mode == "l1" else i["gbps"]
                 w.writerow([mode, side, i["round"], metric, max(c) if c else ""])

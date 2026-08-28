@@ -1,7 +1,7 @@
-#ifndef VMESS_SERVER_CONNECTION_H
-#define VMESS_SERVER_CONNECTION_H
+#ifndef VLESS_SERVER_CONNECTION_H
+#define VLESS_SERVER_CONNECTION_H
 
-namespace vmess {
+namespace vless {
 namespace server {
 
 /**
@@ -34,6 +34,6 @@ public:
 };
 
 } // namespace server
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_SERVER_CONNECTION_H
+#endif // VLESS_SERVER_CONNECTION_H

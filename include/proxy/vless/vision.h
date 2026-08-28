@@ -1,5 +1,5 @@
-#ifndef VMESS_PROXY_VLESS_VISION_H
-#define VMESS_PROXY_VLESS_VISION_H
+#ifndef VLESS_PROXY_VLESS_VISION_H
+#define VLESS_PROXY_VLESS_VISION_H
 
 #include <cstdint>
 #include <vector>
@@ -7,7 +7,7 @@
 #include <memory>
 #include <random>
 
-namespace vmess {
+namespace vless {
 namespace proxy {
 namespace vless {
 
@@ -116,6 +116,6 @@ private:
 
 } // namespace vless
 } // namespace proxy
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_PROXY_VLESS_VISION_H
+#endif // VLESS_PROXY_VLESS_VISION_H

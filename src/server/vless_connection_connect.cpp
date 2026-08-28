@@ -14,7 +14,7 @@
 #include <cstring>
 #include <string>
 
-namespace vmess {
+namespace vless {
 namespace server {
 
 coro::Task<bool> VlessConnection::connectTarget(const proxy::vless::Request& req) {
@@ -143,4 +143,4 @@ int VlessConnection::createTargetSocket(const proxy::vless::Request& req) {
 }
 
 } // namespace server
-} // namespace vmess
+} // namespace vless

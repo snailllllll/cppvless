@@ -1,10 +1,10 @@
-#ifndef VMESS_COMMON_LOG_H
-#define VMESS_COMMON_LOG_H
+#ifndef VLESS_COMMON_LOG_H
+#define VLESS_COMMON_LOG_H
 
 #include <sstream>
 #include <string>
 
-namespace vmess {
+namespace vless {
 namespace common {
 
 enum class LogLevel {
@@ -77,12 +77,12 @@ void log(LogLevel level, const std::string& tag, Args&&... args) {
     logger.enqueue(level, std::move(oss.str()));
 }
 
-#define LOG_ERROR(tag, ...) vmess::common::log(vmess::common::LogLevel::ERROR, tag, __VA_ARGS__)
-#define LOG_WARN(tag, ...)  vmess::common::log(vmess::common::LogLevel::WARN,  tag, __VA_ARGS__)
-#define LOG_INFO(tag, ...)  vmess::common::log(vmess::common::LogLevel::INFO,  tag, __VA_ARGS__)
-#define LOG_DEBUG(tag, ...) vmess::common::log(vmess::common::LogLevel::DEBUG, tag, __VA_ARGS__)
+#define LOG_ERROR(tag, ...) ::vless::common::log(::vless::common::LogLevel::ERROR, tag, __VA_ARGS__)
+#define LOG_WARN(tag, ...)  ::vless::common::log(::vless::common::LogLevel::WARN,  tag, __VA_ARGS__)
+#define LOG_INFO(tag, ...)  ::vless::common::log(::vless::common::LogLevel::INFO,  tag, __VA_ARGS__)
+#define LOG_DEBUG(tag, ...) ::vless::common::log(::vless::common::LogLevel::DEBUG, tag, __VA_ARGS__)
 
 } // namespace common
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_COMMON_LOG_H
+#endif // VLESS_COMMON_LOG_H

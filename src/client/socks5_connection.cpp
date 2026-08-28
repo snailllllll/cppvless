@@ -11,7 +11,7 @@
 
 #include <exception>
 
-namespace vmess {
+namespace vless {
 namespace client {
 
 Socks5Connection::Socks5Connection(int appFd, net::IoUring& uring,
@@ -300,4 +300,4 @@ void Socks5Connection::doClose() {
 }
 
 } // namespace client
-} // namespace vmess
+} // namespace vless

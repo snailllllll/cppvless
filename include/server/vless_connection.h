@@ -1,5 +1,5 @@
-#ifndef VMESS_SERVER_VLESS_CONNECTION_H
-#define VMESS_SERVER_VLESS_CONNECTION_H
+#ifndef VLESS_SERVER_VLESS_CONNECTION_H
+#define VLESS_SERVER_VLESS_CONNECTION_H
 
 #include "coro/async_stream.h"
 #include "coro/buffered_stream.h"
@@ -18,7 +18,7 @@
 #include <memory>
 #include <sys/socket.h>
 
-namespace vmess {
+namespace vless {
 namespace server {
 
 /**
@@ -156,6 +156,6 @@ private:
 };
 
 } // namespace server
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_SERVER_VLESS_CONNECTION_H
+#endif // VLESS_SERVER_VLESS_CONNECTION_H

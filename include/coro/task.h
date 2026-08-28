@@ -1,12 +1,12 @@
-#ifndef VMESS_CORO_TASK_H
-#define VMESS_CORO_TASK_H
+#ifndef VLESS_CORO_TASK_H
+#define VLESS_CORO_TASK_H
 
 #include <coroutine>
 #include <exception>
 #include <optional>
 #include <utility>
 
-namespace vmess {
+namespace vless {
 namespace coro {
 
 // 前置声明
@@ -169,6 +169,6 @@ inline Task<void> detail::TaskPromise<void>::get_return_object() {
 }
 
 } // namespace coro
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_CORO_TASK_H
+#endif // VLESS_CORO_TASK_H

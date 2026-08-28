@@ -1,5 +1,5 @@
-#ifndef VMESS_NET_TLS_STREAM_H
-#define VMESS_NET_TLS_STREAM_H
+#ifndef VLESS_NET_TLS_STREAM_H
+#define VLESS_NET_TLS_STREAM_H
 
 #include "coro/task.h"
 #include "coro/uring_awaitable.h"
@@ -11,7 +11,7 @@
 #include <memory>
 #include <vector>
 
-namespace vmess {
+namespace vless {
 namespace net {
 
 /**
@@ -74,6 +74,6 @@ private:
 };
 
 } // namespace net
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_NET_TLS_STREAM_H
+#endif // VLESS_NET_TLS_STREAM_H

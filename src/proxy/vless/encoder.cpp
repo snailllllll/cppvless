@@ -3,7 +3,7 @@
 #include <arpa/inet.h>
 #include <cstring>
 
-namespace vmess {
+namespace vless {
 namespace proxy {
 namespace vless {
 
@@ -80,4 +80,4 @@ void Encoder::writeAddress(std::vector<uint8_t>& out, const Request& req) {
 
 } // namespace vless
 } // namespace proxy
-} // namespace vmess
+} // namespace vless

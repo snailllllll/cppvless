@@ -1,12 +1,12 @@
-#ifndef VMESS_COMMON_LINK_H
-#define VMESS_COMMON_LINK_H
+#ifndef VLESS_COMMON_LINK_H
+#define VLESS_COMMON_LINK_H
 
 #include "common/config.h"
 
 #include <string>
 #include <vector>
 
-namespace vmess {
+namespace vless {
 namespace common {
 
 /**
@@ -47,6 +47,6 @@ std::string buildVlessQrText(const std::string& host,
 std::string detectPublicIp(int timeoutMs = 3000);
 
 } // namespace common
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_COMMON_LINK_H
+#endif // VLESS_COMMON_LINK_H

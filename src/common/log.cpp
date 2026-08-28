@@ -14,7 +14,7 @@
 #include <mutex>
 #include <thread>
 
-namespace vmess {
+namespace vless {
 namespace common {
 
 namespace {
@@ -213,4 +213,4 @@ std::string formatLogLine(LogLevel level, const std::string& message) {
 }
 
 } // namespace common
-} // namespace vmess
+} // namespace vless

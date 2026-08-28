@@ -4,7 +4,7 @@
 #include <cstring>
 #include <stdexcept>
 
-namespace vmess {
+namespace vless {
 namespace proxy {
 namespace socks5 {
 
@@ -245,4 +245,4 @@ std::vector<uint8_t> Parser::encodeUdpDatagram(const Address& addr,
 
 } // namespace socks5
 } // namespace proxy
-} // namespace vmess
+} // namespace vless

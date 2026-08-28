@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <cstring>
 
-namespace vmess {
+namespace vless {
 namespace proxy {
 namespace vless {
 
@@ -347,4 +347,4 @@ bool VisionWriter::isCompleteRecord(const uint8_t* data, size_t len) {
 
 } // namespace vless
 } // namespace proxy
-} // namespace vmess
+} // namespace vless

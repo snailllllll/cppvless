@@ -1,5 +1,5 @@
-#ifndef VMESS_CORO_BUFFERED_STREAM_H
-#define VMESS_CORO_BUFFERED_STREAM_H
+#ifndef VLESS_CORO_BUFFERED_STREAM_H
+#define VLESS_CORO_BUFFERED_STREAM_H
 
 #include "common/log.h"
 #include "coro/task.h"
@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace vmess {
+namespace vless {
 namespace coro {
 
 /**
@@ -93,6 +93,6 @@ private:
 };
 
 } // namespace coro
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_CORO_BUFFERED_STREAM_H
+#endif // VLESS_CORO_BUFFERED_STREAM_H

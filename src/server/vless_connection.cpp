@@ -9,7 +9,7 @@
 
 #include <exception>
 
-namespace vmess {
+namespace vless {
 namespace server {
 
 VlessConnection::VlessConnection(int clientFd, net::IoUring& uring,
@@ -217,4 +217,4 @@ void VlessConnection::doClose() {
 }
 
 } // namespace server
-} // namespace vmess
+} // namespace vless

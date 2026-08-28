@@ -1,5 +1,5 @@
-#ifndef VMESS_NET_IO_URING_H
-#define VMESS_NET_IO_URING_H
+#ifndef VLESS_NET_IO_URING_H
+#define VLESS_NET_IO_URING_H
 
 #include <liburing.h>
 #include <cstdint>
@@ -21,7 +21,7 @@
 // 前置声明
 struct io_uring;
 
-namespace vmess {
+namespace vless {
 namespace net {
 
 /**
@@ -91,6 +91,6 @@ private:
 };
 
 }  // namespace net
-}  // namespace vmess
+}  // namespace vless
 
-#endif  // VMESS_NET_IO_URING_H
+#endif  // VLESS_NET_IO_URING_H

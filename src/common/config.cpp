@@ -12,7 +12,7 @@
 #include <sstream>
 #include <sys/stat.h>
 
-namespace vmess {
+namespace vless {
 namespace common {
 
 namespace {
@@ -510,4 +510,4 @@ bool loadClientConfig(const std::string& path, ClientConfig& cfg,
 }
 
 } // namespace common
-} // namespace vmess
+} // namespace vless

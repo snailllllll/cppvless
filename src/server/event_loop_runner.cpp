@@ -6,7 +6,7 @@
 #include <mutex>
 #include <thread>
 
-namespace vmess {
+namespace vless {
 namespace server {
 
 namespace {
@@ -97,4 +97,4 @@ int runEventLoops(std::vector<std::unique_ptr<EventLoop>>& loops,
 }
 
 } // namespace server
-} // namespace vmess
+} // namespace vless

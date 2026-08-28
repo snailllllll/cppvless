@@ -111,4 +111,4 @@ worker 线程:
 
 - [ ] 是否引入 fmt 风格宏（LOG_INFO_F）解决 #3？
 - [ ] 是否现在就引入 spdlog（轮转 / per-module 过滤是硬需求时）？
-- [ ] 默认日志路径：`stderr`（docker 收集）or `/var/log/vmess/server.log`？
+- [ ] 默认日志路径：`stderr`（docker 收集）or `/var/log/vless/server.log`？

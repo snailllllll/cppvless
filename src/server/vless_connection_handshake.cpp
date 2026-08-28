@@ -3,7 +3,7 @@
 #include "proxy/vless/vision.h"
 #include "common/log.h"
 
-namespace vmess {
+namespace vless {
 namespace server {
 
 coro::Task<bool> VlessConnection::setupVision(const proxy::vless::Request& req) {
@@ -76,4 +76,4 @@ coro::Task<proxy::vless::Request> VlessConnection::processHandshake() {
 }
 
 } // namespace server
-} // namespace vmess
+} // namespace vless

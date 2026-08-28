@@ -2,7 +2,7 @@
 
 #include <sys/socket.h>
 
-namespace vmess {
+namespace vless {
 namespace coro {
 
 AsyncStream::AsyncStream(int fd, net::IoUring& uring)
@@ -35,4 +35,4 @@ Task<int> AsyncStream::shutdownWrite() {
 }
 
 } // namespace coro
-} // namespace vmess
+} // namespace vless

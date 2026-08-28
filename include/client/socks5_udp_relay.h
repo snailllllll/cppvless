@@ -1,5 +1,5 @@
-#ifndef VMESS_CLIENT_SOCKS5_UDP_RELAY_H
-#define VMESS_CLIENT_SOCKS5_UDP_RELAY_H
+#ifndef VLESS_CLIENT_SOCKS5_UDP_RELAY_H
+#define VLESS_CLIENT_SOCKS5_UDP_RELAY_H
 
 #include "client/vless_client.h"
 #include "coro/task.h"
@@ -11,7 +11,7 @@
 #include <memory>
 #include <vector>
 
-namespace vmess {
+namespace vless {
 namespace client {
 
 /**
@@ -100,6 +100,6 @@ private:
 };
 
 } // namespace client
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_CLIENT_SOCKS5_UDP_RELAY_H
+#endif // VLESS_CLIENT_SOCKS5_UDP_RELAY_H

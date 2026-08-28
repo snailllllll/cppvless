@@ -1,11 +1,11 @@
-#ifndef VMESS_COMMON_CONFIG_H
-#define VMESS_COMMON_CONFIG_H
+#ifndef VLESS_COMMON_CONFIG_H
+#define VLESS_COMMON_CONFIG_H
 
 #include <cstdint>
 #include <string>
 #include <vector>
 
-namespace vmess {
+namespace vless {
 namespace common {
 
 /// 单个 VLESS 用户（UUID + 备注名）
@@ -25,7 +25,7 @@ struct TlsConfigData {
     std::string certSha256;           // 运行时回填：服务器证书 DER 的 SHA-256（hex 小写），用于分享链接 pcs/pinSHA256
 };
 
-/// 服务端配置（对应 /etc/vmess/config.json）
+/// 服务端配置（对应 /etc/vless/config.json）
 struct ServerConfig {
     uint16_t port = 1080;             // 明文 VLESS 端口
     std::string logLevel = "info";    // debug/info/warn/error
@@ -35,7 +35,7 @@ struct ServerConfig {
     std::vector<UserConfig> users;    // 认证用户（UUID）列表
 };
 
-/// 客户端配置（对应 /etc/vmess/client.json）
+/// 客户端配置（对应 /etc/vless/client.json）
 struct ClientConfig {
     uint16_t socks5Port = 1080;       // 本地 SOCKS5 监听端口
     std::string remote = "127.0.0.1:443"; // 远端 VLESS 服务器 host:port
@@ -75,6 +75,6 @@ bool loadClientConfig(const std::string& path, ClientConfig& cfg,
 std::string generateUuid();
 
 } // namespace common
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_COMMON_CONFIG_H
+#endif // VLESS_COMMON_CONFIG_H

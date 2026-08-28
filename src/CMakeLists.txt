@@ -60,7 +60,7 @@ target_include_directories(tls PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(tls PUBLIC OpenSSL::SSL OpenSSL::Crypto coro)
 
 # 服务器库
-add_library(vmess_server_lib STATIC
+add_library(vless_server_lib STATIC
     server/event_loop.cpp
     server/event_loop_runner.cpp
     server/vless_connection.cpp
@@ -70,30 +70,30 @@ add_library(vmess_server_lib STATIC
     server/vless_connection_relay_udp.cpp
     server/vless_connection_target_task.cpp
 )
-target_include_directories(vmess_server_lib PUBLIC ${PROJECT_SOURCE_DIR}/include)
-target_link_libraries(vmess_server_lib PUBLIC io_uring coro vless_proxy tls)
+target_include_directories(vless_server_lib PUBLIC ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(vless_server_lib PUBLIC io_uring coro vless_proxy tls)
 
 # 客户端库
-add_library(vmess_client_lib STATIC
+add_library(vless_client_lib STATIC
     client/vless_client.cpp
     client/socks5_connection.cpp
     client/socks5_udp_relay.cpp
 )
-target_include_directories(vmess_client_lib PUBLIC ${PROJECT_SOURCE_DIR}/include)
-target_link_libraries(vmess_client_lib PUBLIC io_uring coro vless_proxy socks5)
+target_include_directories(vless_client_lib PUBLIC ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(vless_client_lib PUBLIC io_uring coro vless_proxy socks5)
 
 # 主程序可执行文件（VLESS 服务端）
-add_executable(vmess_server main.cpp)
-target_link_libraries(vmess_server PRIVATE
-    vmess_server_lib
+add_executable(vless_server main.cpp)
+target_link_libraries(vless_server PRIVATE
+    vless_server_lib
     pthread
 )
 
 # 客户端可执行文件（SOCKS5 → VLESS）
-# 复用 EventLoop（vmess_server_lib），静态库只拉取被引用的目标文件
-add_executable(vmess_client client/client_main.cpp)
-target_link_libraries(vmess_client PRIVATE
-    vmess_client_lib
-    vmess_server_lib
+# 复用 EventLoop（vless_server_lib），静态库只拉取被引用的目标文件
+add_executable(vless_client client/client_main.cpp)
+target_link_libraries(vless_client PRIVATE
+    vless_client_lib
+    vless_server_lib
     pthread
 )

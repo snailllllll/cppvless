@@ -1,11 +1,11 @@
-#ifndef VMESS_NET_IO_URING_CPP
-#define VMESS_NET_IO_URING_CPP
+#ifndef VLESS_NET_IO_URING_CPP
+#define VLESS_NET_IO_URING_CPP
 
 #include "net/io_uring.h"
 #include <cstring>
 #include <stdexcept>
 
-namespace vmess {
+namespace vless {
 namespace net {
 
 // ============ IoUring 实现 ============
@@ -70,6 +70,6 @@ void IoUring::processCompletions(const UringCallback& callback) {
 }
 
 }  // namespace net
-}  // namespace vmess
+}  // namespace vless
 
-#endif  // VMESS_NET_IO_URING_CPP
+#endif  // VLESS_NET_IO_URING_CPP

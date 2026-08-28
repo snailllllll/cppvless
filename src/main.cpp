@@ -52,14 +52,14 @@ void printUsage(const char* prog) {
         "                       [port] [loglevel] [workers]\n"
         "\n"
         "Options:\n"
-        "  --config <path>     配置文件路径（默认 /etc/vmess/config.json，或\n"
+        "  --config <path>     配置文件路径（默认 /etc/vless/config.json，或\n"
         "                      环境变量 VLESS_CONFIG）。首次启动自动生成并写入。\n"
         "                      配置文件字段：port/log_level/workers/tls/users，\n"
         "                      命令行参数可覆盖其中的对应字段。\n"
         "  --tls-port <port>  启用 TLS 端口（与明文端口并存；默认 443）\n"
         "  --cert <path>      证书文件（PEM）。与 --key 一起指定则用正式证书\n"
         "  --key <path>       私钥文件（PEM）\n"
-        "  --cert-dir <dir>   自签证书落盘目录（默认 ./certs，容器内 /etc/vmess/certs）\n"
+        "  --cert-dir <dir>   自签证书落盘目录（默认 ./certs，容器内 /etc/vless/certs）\n"
         "  --cert-days <days> 自签证书有效期天数（默认 365）\n"
         "  --public-host <host> 公网地址（域名/IP），用于生成 vless:// 分享链接与\n"
         "                      二维码（默认取配置文件 host 字段；均未配置时自动探测\n"
@@ -141,7 +141,7 @@ bool parseArgs(int argc, char* argv[], Cli& cli, std::string& configPath,
 }
 
 /// 命令行覆盖配置文件
-void applyCliOverrides(const Cli& cli, vmess::common::ServerConfig& cfg) {
+void applyCliOverrides(const Cli& cli, vless::common::ServerConfig& cfg) {
     if (cli.portSet) {
         cfg.port = static_cast<uint16_t>(cli.port);
     }
@@ -175,7 +175,7 @@ void applyCliOverrides(const Cli& cli, vmess::common::ServerConfig& cfg) {
 }
 
 /// 追加 VLESS_USERS 环境变量中的 UUID
-void appendEnvUsers(vmess::common::ServerConfig& cfg) {
+void appendEnvUsers(vless::common::ServerConfig& cfg) {
     const char* usersEnv = std::getenv("VLESS_USERS");
     if (!usersEnv || usersEnv[0] == '\0') {
         return;
@@ -189,7 +189,7 @@ void appendEnvUsers(vmess::common::ServerConfig& cfg) {
                                  [](unsigned char ch) { return !std::isspace(ch); }).base(),
                     token.end());
         if (!token.empty()) {
-            vmess::common::UserConfig uc;
+            vless::common::UserConfig uc;
             uc.uuid = token;
             uc.name = "env";
             cfg.users.push_back(std::move(uc));
@@ -198,25 +198,25 @@ void appendEnvUsers(vmess::common::ServerConfig& cfg) {
 }
 
 /// 确保至少有一个用户：否则生成随机 UUID 并持久化到配置文件
-void ensureDefaultUser(vmess::common::ServerConfig& cfg, const std::string& configPath) {
+void ensureDefaultUser(vless::common::ServerConfig& cfg, const std::string& configPath) {
     if (!cfg.users.empty()) {
         return;
     }
-    vmess::common::UserConfig uc;
-    uc.uuid = vmess::common::generateUuid();
+    vless::common::UserConfig uc;
+    uc.uuid = vless::common::generateUuid();
     uc.name = "default";
     cfg.users.push_back(uc);
     std::string writeErr;
-    vmess::common::writeServerConfig(configPath, cfg, writeErr);
+    vless::common::writeServerConfig(configPath, cfg, writeErr);
     if (!writeErr.empty()) {
         std::cerr << "[Main] Warn: failed to persist generated user: " << writeErr << std::endl;
     }
 }
 
 /// 启动横幅（含用户 UUID 列表，便于部署后从日志直接获取）
-void printBanner(const vmess::common::ServerConfig& cfg, const std::string& configPath,
+void printBanner(const vless::common::ServerConfig& cfg, const std::string& configPath,
                  bool cfgCreated, unsigned int workerCount,
-                 const vmess::net::TlsConfig& tlsCfg, const std::string& tlsWarn) {
+                 const vless::net::TlsConfig& tlsCfg, const std::string& tlsWarn) {
     std::cerr << "=== VLESS Server ===" << std::endl;
     std::cerr << "Config: " << configPath
               << (cfgCreated ? " (generated on first run)" : "") << std::endl;
@@ -237,7 +237,7 @@ void printBanner(const vmess::common::ServerConfig& cfg, const std::string& conf
     std::cerr << "Users: " << cfg.users.size() << std::endl;
     for (size_t i = 0; i < cfg.users.size(); ++i) {
         std::array<uint8_t, 16> parsed{};
-        const bool ok = vmess::proxy::vless::Validator::parseUuid(cfg.users[i].uuid, parsed);
+        const bool ok = vless::proxy::vless::Validator::parseUuid(cfg.users[i].uuid, parsed);
         std::cerr << "  user[" << i << "]: " << cfg.users[i].uuid
                   << (cfg.users[i].name.empty() ? "" : " (" + cfg.users[i].name + ")")
                   << (ok ? "" : " [INVALID]") << std::endl;
@@ -246,14 +246,14 @@ void printBanner(const vmess::common::ServerConfig& cfg, const std::string& conf
     // 分享链接 + 二维码（需配置公网地址 host / --public-host）
     if (!cfg.host.empty()) {
         for (size_t i = 0; i < cfg.users.size(); ++i) {
-            const std::string link = vmess::common::buildVlessLink(cfg.host, cfg, cfg.users[i]);
+            const std::string link = vless::common::buildVlessLink(cfg.host, cfg, cfg.users[i]);
             if (link.empty()) {
                 continue;
             }
             std::cerr << std::endl;
             std::cerr << "Share link[" << i << "] (客户端扫码/粘贴导入):" << std::endl;
             std::cerr << "  " << link << std::endl;
-            std::cerr << vmess::common::renderQrText(link);
+            std::cerr << vless::common::renderQrText(link);
         }
     } else {
         std::cerr << std::endl;
@@ -287,14 +287,14 @@ int main(int argc, char* argv[]) {
         }
     }
     if (configPath.empty()) {
-        configPath = "/etc/vmess/config.json";
+        configPath = "/etc/vless/config.json";
     }
 
     // ── 2. 加载配置（首启自动生成随机 UUID 并落盘）──────────────────────
-    vmess::common::ServerConfig cfg;
+    vless::common::ServerConfig cfg;
     bool cfgCreated = false;
     std::string cfgError;
-    if (!vmess::common::loadServerConfig(configPath, cfg, &cfgCreated, cfgError)) {
+    if (!vless::common::loadServerConfig(configPath, cfg, &cfgCreated, cfgError)) {
         std::cerr << "[Main] Error: " << cfgError << std::endl;
         return 1;
     }
@@ -311,7 +311,7 @@ int main(int argc, char* argv[]) {
     appendEnvUsers(cfg);
     ensureDefaultUser(cfg, configPath);
 
-    vmess::proxy::vless::Validator validator;
+    vless::proxy::vless::Validator validator;
     for (const auto& u : cfg.users) {
         if (!validator.addFromString(u.uuid)) {
             std::cerr << "[Main] Warn: invalid uuid ignored: \"" << u.uuid << "\""
@@ -326,11 +326,11 @@ int main(int argc, char* argv[]) {
             logFile = env;
         }
     }
-    vmess::common::Logger::instance().setLogFile(logFile);
-    vmess::common::setLogLevel(vmess::common::parseLogLevel(cfg.logLevel));
+    vless::common::Logger::instance().setLogFile(logFile);
+    vless::common::setLogLevel(vless::common::parseLogLevel(cfg.logLevel));
 
     // ── 5. TLS 上下文（正式证书 / 自签保底 / 失败退出）──────────────────
-    vmess::net::TlsConfig tlsCfg;
+    vless::net::TlsConfig tlsCfg;
     tlsCfg.enabled = cfg.tls.enabled;
     tlsCfg.certFile = cfg.tls.certFile;
     tlsCfg.keyFile = cfg.tls.keyFile;
@@ -340,7 +340,7 @@ int main(int argc, char* argv[]) {
     std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)> tlsCtx(nullptr, SSL_CTX_free);
     std::string tlsWarn;
     if (tlsCfg.enabled) {
-        SSL_CTX* ctx = vmess::net::createServerSslContext(tlsCfg, &tlsWarn);
+        SSL_CTX* ctx = vless::net::createServerSslContext(tlsCfg, &tlsWarn);
         if (!ctx) {
             std::cerr << "[Main] Error: failed to create TLS context"
                       << (tlsCfg.certFile.empty() ? " (self-signed fallback failed)"
@@ -362,7 +362,7 @@ int main(int argc, char* argv[]) {
             std::cerr << "[Main] Skip public IP auto-detect (VLESS_NO_AUTO_HOST)" << std::endl;
         } else {
             std::cerr << "[Main] Auto-detecting public IP..." << std::endl;
-            const std::string ip = vmess::common::detectPublicIp();
+            const std::string ip = vless::common::detectPublicIp();
             if (!ip.empty()) {
                 cfg.host = ip;
                 std::cerr << "[Main] Public IP auto-detected: " << ip << std::endl;
@@ -384,21 +384,21 @@ int main(int argc, char* argv[]) {
 
     // ── 8. 组装 EventLoop 组 ─────────────────────────────────────────────
     auto makeFactory = [&validator](SSL_CTX* tls) {
-        return [&validator, tls](int clientFd, vmess::net::IoUring& uring) {
-            return std::make_unique<vmess::server::VlessConnection>(
+        return [&validator, tls](int clientFd, vless::net::IoUring& uring) {
+            return std::make_unique<vless::server::VlessConnection>(
                 clientFd, uring, validator, tls);
         };
     };
 
-    std::vector<std::unique_ptr<vmess::server::EventLoop>> loops;
+    std::vector<std::unique_ptr<vless::server::EventLoop>> loops;
     std::vector<uint16_t> ports;
     for (unsigned int i = 0; i < workerCount; ++i) {
-        loops.push_back(std::make_unique<vmess::server::EventLoop>(makeFactory(nullptr)));
+        loops.push_back(std::make_unique<vless::server::EventLoop>(makeFactory(nullptr)));
         ports.push_back(cfg.port);
     }
     if (tlsCfg.enabled) {
         for (unsigned int i = 0; i < workerCount; ++i) {
-            loops.push_back(std::make_unique<vmess::server::EventLoop>(makeFactory(tlsCtx.get())));
+            loops.push_back(std::make_unique<vless::server::EventLoop>(makeFactory(tlsCtx.get())));
             ports.push_back(cfg.tls.port);
         }
     }
@@ -408,7 +408,7 @@ int main(int argc, char* argv[]) {
 
     std::string runError;
     const bool reusePort = workerCount > 1;
-    const int rc = vmess::server::runEventLoops(loops, ports, reusePort, &runError);
+    const int rc = vless::server::runEventLoops(loops, ports, reusePort, &runError);
     if (rc != 0) {
         std::cerr << "[Main] Error: "
                   << (runError.empty() ? "event loop failed" : runError) << std::endl;

@@ -19,7 +19,7 @@
 #include <sstream>
 #include <vector>
 
-namespace vmess {
+namespace vless {
 namespace net {
 
 namespace {
@@ -266,7 +266,7 @@ SSL_CTX* createServerSslContext(TlsConfig& cfg, std::string* warnOut) {
     }
 
     // 生成新自签证书
-    const std::string cn = "vmess-self-signed";
+    const std::string cn = "vless-self-signed";
     if (!generateSelfSigned(&certPem, &keyPem, cfg.certDays, cn)) {
         SSL_CTX_free(ctx);
         return nullptr;
@@ -320,4 +320,4 @@ SSL_CTX* createClientSslContext(bool insecure) {
 }
 
 } // namespace net
-} // namespace vmess
+} // namespace vless

@@ -38,7 +38,7 @@ struct Cli {
 
 void printUsage(const char* prog) {
     std::cerr << "Usage: " << prog << " [options]\n"
-              << "  --config <path>        配置文件路径 (default: /etc/vmess/client.json)\n"
+              << "  --config <path>        配置文件路径 (default: /etc/vless/client.json)\n"
               << "                        支持字段: socks5_port/remote/uuid/log_level/workers\n"
               << "  --socks5-port <port>   本地 SOCKS5 监听端口 (default: 1080)\n"
               << "  --remote <host:port>   远端 VLESS 服务器地址 (default: 127.0.0.1:443)\n"
@@ -97,7 +97,7 @@ bool parseArgs(int argc, char* argv[], Cli& cli, std::string& configPath,
 }
 
 /// 命令行覆盖配置
-void applyCliOverrides(const Cli& cli, vmess::common::ClientConfig& cfg) {
+void applyCliOverrides(const Cli& cli, vless::common::ClientConfig& cfg) {
     if (cli.socks5PortSet) {
         cfg.socks5Port = static_cast<uint16_t>(cli.socks5Port);
     }
@@ -140,13 +140,13 @@ int main(int argc, char* argv[]) {
         }
     }
     if (configPath.empty()) {
-        configPath = "/etc/vmess/client.json";
+        configPath = "/etc/vless/client.json";
     }
 
     // ── 2. 加载客户端配置（可选；文件不存在时用内置默认，不报错）────────
-    vmess::common::ClientConfig ccfg;
+    vless::common::ClientConfig ccfg;
     std::string cfgWarn;
-    vmess::common::loadClientConfig(configPath, ccfg, cfgWarn);
+    vless::common::loadClientConfig(configPath, ccfg, cfgWarn);
     applyCliOverrides(cli, ccfg);
 
     // 兼容旧行为：任何来源都未提供 UUID 时使用内置默认
@@ -161,21 +161,21 @@ int main(int argc, char* argv[]) {
             logFile = env;
         }
     }
-    vmess::common::Logger::instance().setLogFile(logFile);
-    vmess::common::setLogLevel(vmess::common::parseLogLevel(ccfg.logLevel));
+    vless::common::Logger::instance().setLogFile(logFile);
+    vless::common::setLogLevel(vless::common::parseLogLevel(ccfg.logLevel));
 
     // ── 4. 解析 UUID 与远端地址 ──────────────────────────────────────────
     std::array<uint8_t, 16> uuid{};
-    if (!vmess::proxy::vless::Validator::parseUuid(ccfg.uuid, uuid)) {
+    if (!vless::proxy::vless::Validator::parseUuid(ccfg.uuid, uuid)) {
         std::cerr << "[ClientMain] Invalid uuid: " << ccfg.uuid << std::endl;
         return 1;
     }
-    vmess::client::VlessClientConfig cfg = vmess::client::VlessClientConfig::fromString(ccfg.remote);
+    vless::client::VlessClientConfig cfg = vless::client::VlessClientConfig::fromString(ccfg.remote);
     cfg.uuid = uuid;
     cfg.tlsEnabled = ccfg.tlsEnabled;
     cfg.tlsInsecure = ccfg.tlsInsecure;
     if (ccfg.tlsEnabled) {
-        SSL_CTX* ctx = vmess::net::createClientSslContext(ccfg.tlsInsecure);
+        SSL_CTX* ctx = vless::net::createClientSslContext(ccfg.tlsInsecure);
         if (!ctx) {
             std::cerr << "[ClientMain] failed to create client TLS context" << std::endl;
             return 1;
@@ -207,14 +207,14 @@ int main(int argc, char* argv[]) {
     std::cerr << std::endl;
 
     // ── 5. 组装 EventLoop 组并运行 ───────────────────────────────────────
-    std::vector<std::unique_ptr<vmess::server::EventLoop>> loops;
+    std::vector<std::unique_ptr<vless::server::EventLoop>> loops;
     std::vector<uint16_t> ports;
     loops.reserve(workerCount);
     for (unsigned int i = 0; i < workerCount; ++i) {
         // 工厂模式：每个 accept 的 fd 创建一个 SOCKS5 连接
-        loops.push_back(std::make_unique<vmess::server::EventLoop>(
-            [cfg](int clientFd, vmess::net::IoUring& uring) {
-                return std::make_unique<vmess::client::Socks5Connection>(
+        loops.push_back(std::make_unique<vless::server::EventLoop>(
+            [cfg](int clientFd, vless::net::IoUring& uring) {
+                return std::make_unique<vless::client::Socks5Connection>(
                     clientFd, uring, cfg);
             }));
         ports.push_back(ccfg.socks5Port);
@@ -222,7 +222,7 @@ int main(int argc, char* argv[]) {
 
     std::string runError;
     const bool reusePort = workerCount > 1;
-    const int rc = vmess::server::runEventLoops(loops, ports, reusePort, &runError);
+    const int rc = vless::server::runEventLoops(loops, ports, reusePort, &runError);
     if (rc != 0) {
         std::cerr << "[ClientMain] Error: "
                   << (runError.empty() ? "event loop failed" : runError) << std::endl;

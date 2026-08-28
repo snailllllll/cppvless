@@ -1,5 +1,5 @@
-#ifndef VMESS_PROXY_VLESS_PROTOCOL_H
-#define VMESS_PROXY_VLESS_PROTOCOL_H
+#ifndef VLESS_PROXY_VLESS_PROTOCOL_H
+#define VLESS_PROXY_VLESS_PROTOCOL_H
 
 #include <cstdint>
 #include <array>
@@ -7,7 +7,7 @@
 #include <variant>
 #include <vector>
 
-namespace vmess {
+namespace vless {
 namespace proxy {
 namespace vless {
 
@@ -70,6 +70,6 @@ struct Response {
 
 } // namespace vless
 } // namespace proxy
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_PROXY_VLESS_PROTOCOL_H
+#endif // VLESS_PROXY_VLESS_PROTOCOL_H

@@ -6,7 +6,7 @@
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-BODY = b'hello-vmess-stream-abstract'
+BODY = b'hello-vless-stream-abstract'
 
 
 class Handler(BaseHTTPRequestHandler):

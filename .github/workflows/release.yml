@@ -57,7 +57,7 @@ jobs:
         run: |
           mkdir -p dist
           tar -czf dist/cppvless-linux-${{ matrix.arch }}.tar.gz \
-            -C build-docker/src vmess_server vmess_client
+            -C build-docker/src vless_server vless_client
           sha256sum dist/cppvless-linux-${{ matrix.arch }}.tar.gz \
             | awk '{print $1}' > dist/cppvless-linux-${{ matrix.arch }}.tar.gz.sha256
           ls -lh dist/

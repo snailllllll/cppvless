@@ -1,5 +1,5 @@
-# CI 测试镜像：构建 vmess + 跑功能测试
-# 用法: docker build -f tests/Dockerfile.ci -t vmess-ci . && docker run --rm vmess-ci
+# CI 测试镜像：构建 vless + 跑功能测试
+# 用法: docker build -f tests/Dockerfile.ci -t vless-ci . && docker run --rm vless-ci
 # 说明: 通过 docker build 上下文把代码拷入镜像，规避"嵌套 docker 挂载宿主路径"问题
 FROM ubuntu:22.04
 

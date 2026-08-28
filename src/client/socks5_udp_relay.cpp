@@ -11,7 +11,7 @@
 
 #include <cstring>
 
-namespace vmess {
+namespace vless {
 namespace client {
 
 Socks5UdpRelay::Socks5UdpRelay(int udpFd, net::IoUring& uring,
@@ -292,4 +292,4 @@ void Socks5UdpRelay::enqueueDatagram(const proxy::socks5::Address& dest, uint16_
 }
 
 } // namespace client
-} // namespace vmess
+} // namespace vless

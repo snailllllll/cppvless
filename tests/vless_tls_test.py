@@ -64,7 +64,7 @@ def main():
     except socket.timeout:
         pass
 
-    ok = b"hello-vmess-stream-abstract" in data
+    ok = b"hello-vless-stream-abstract" in data
     print(f"{'PASS' if ok else 'FAIL'}: got {len(data)} bytes, "
           f"content_match={ok}")
     tls.close()

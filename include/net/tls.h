@@ -1,12 +1,12 @@
-#ifndef VMESS_NET_TLS_H
-#define VMESS_NET_TLS_H
+#ifndef VLESS_NET_TLS_H
+#define VLESS_NET_TLS_H
 
 #include <openssl/ssl.h>
 
 #include <cstdint>
 #include <string>
 
-namespace vmess {
+namespace vless {
 namespace net {
 
 /**
@@ -49,6 +49,6 @@ SSL_CTX* createServerSslContext(TlsConfig& cfg, std::string* warnOut = nullptr);
 SSL_CTX* createClientSslContext(bool insecure);
 
 } // namespace net
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_NET_TLS_H
+#endif // VLESS_NET_TLS_H

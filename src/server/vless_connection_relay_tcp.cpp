@@ -2,7 +2,7 @@
 #include "coro/async_stream.h"
 #include "common/log.h"
 
-namespace vmess {
+namespace vless {
 namespace server {
 
 coro::Task<bool> VlessConnection::forwardHandshakeRemaining() {
@@ -130,4 +130,4 @@ coro::Task<bool> VlessConnection::relayClientToTarget() {
 }
 
 } // namespace server
-} // namespace vmess
+} // namespace vless

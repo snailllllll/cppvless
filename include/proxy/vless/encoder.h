@@ -1,5 +1,5 @@
-#ifndef VMESS_PROXY_VLESS_ENCODER_H
-#define VMESS_PROXY_VLESS_ENCODER_H
+#ifndef VLESS_PROXY_VLESS_ENCODER_H
+#define VLESS_PROXY_VLESS_ENCODER_H
 
 #include "proxy/vless/protocol.h"
 #include "coro/buffered_stream.h"
@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace vmess {
+namespace vless {
 namespace proxy {
 namespace vless {
 
@@ -56,6 +56,6 @@ public:
 
 } // namespace vless
 } // namespace proxy
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_PROXY_VLESS_ENCODER_H
+#endif // VLESS_PROXY_VLESS_ENCODER_H

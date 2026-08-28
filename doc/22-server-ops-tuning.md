@@ -80,6 +80,6 @@ rm -f /etc/sysctl.d/99-bbr.conf
    iperf3 -c <服务器IP> -p 5201 -R     # 测下行（反向）
    iperf3 -c <服务器IP> -p 5201 -R -P 4  # 多并行流
    ```
-3. **走代理真实体验**（客户端挂 vmess_client SOCKS5 → fast.com 单连接测速）。
+3. **走代理真实体验**（客户端挂 vless_client SOCKS5 → fast.com 单连接测速）。
 
 判断：直连慢 → 换线路/运营商出口；直连快但走代理慢 → 查代理软件（io_uring/转发逻辑）。

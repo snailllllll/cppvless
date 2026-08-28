@@ -1,5 +1,5 @@
-#ifndef VMESS_SERVER_EVENT_LOOP_H
-#define VMESS_SERVER_EVENT_LOOP_H
+#ifndef VLESS_SERVER_EVENT_LOOP_H
+#define VLESS_SERVER_EVENT_LOOP_H
 
 #include "net/io_uring.h"
 #include "server/connection.h"
@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <atomic>
 
-namespace vmess {
+namespace vless {
 namespace server {
 
 /**
@@ -53,6 +53,6 @@ private:
 };
 
 } // namespace server
-} // namespace vmess
+} // namespace vless
 
-#endif // VMESS_SERVER_EVENT_LOOP_H
+#endif // VLESS_SERVER_EVENT_LOOP_H
