@@ -26,16 +26,6 @@ VlessConnection::VlessConnection(int clientFd, net::IoUring& uring,
       stream_(*clientStream_) {}
 
 VlessConnection::~VlessConnection() {
-    // 方案 A：所有权唯一归位。
-    // rawStream_ / tlsStream_ 各自唯一持有并释放自己管理的对象；clientStream_
-    // 只是视图指针（借用、不拥有），析构时无操作，因此不存在 double free，
-    // 也不依赖成员声明顺序或 release() 兜底。
-    // 析构逆序：stream_(引用) → clientStream_(无操作) → tlsStream_(delete
-    // TlsStream，其内部引用的 rawStream_ 此刻仍存活) → rawStream_(delete)。
-
-    // 无论 closed_ 标记如何，析构时都必须释放 fd。
-    // 半关闭路径会先置 closed_=true，若此处跳过 doClose 会泄漏 fd，
-    // 最终触发 EMFILE，表现为“连一会儿就不正常”。
     doClose();
 }
 

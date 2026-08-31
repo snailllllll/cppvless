@@ -233,7 +233,14 @@ void printBanner(const vless::common::ServerConfig& cfg, const std::string& conf
         std::cerr << "TLS: disabled" << std::endl;
     }
     std::cerr << "LogLevel: " << cfg.logLevel << std::endl;
-    std::cerr << "Workers: " << workerCount << std::endl;
+    if (tlsCfg.enabled) {
+        // 双监听：明文组 + TLS 组各 workerCount 个 EventLoop（每 loop 一线程）
+        std::cerr << "Workers: " << workerCount << " per port group ("
+                  << (workerCount * 2) << " threads total: plaintext + TLS)"
+                  << std::endl;
+    } else {
+        std::cerr << "Workers: " << workerCount << std::endl;
+    }
     std::cerr << "Users: " << cfg.users.size() << std::endl;
     for (size_t i = 0; i < cfg.users.size(); ++i) {
         std::array<uint8_t, 16> parsed{};
@@ -383,22 +390,29 @@ int main(int argc, char* argv[]) {
     }
 
     // ── 8. 组装 EventLoop 组 ─────────────────────────────────────────────
+    // 工厂闭包仅捕获 validator 引用与 TLS 上下文指针，可被多个 worker
+    // 安全拷贝共享，因此提前构造好两份，循环内直接复用。
     auto makeFactory = [&validator](SSL_CTX* tls) {
         return [&validator, tls](int clientFd, vless::net::IoUring& uring) {
             return std::make_unique<vless::server::VlessConnection>(
                 clientFd, uring, validator, tls);
         };
     };
+    vless::server::EventLoop::ConnectionFactory plainFactory = makeFactory(nullptr);
+    vless::server::EventLoop::ConnectionFactory tlsFactory;
+    if (tlsCfg.enabled) {
+        tlsFactory = makeFactory(tlsCtx.get());
+    }
 
     std::vector<std::unique_ptr<vless::server::EventLoop>> loops;
     std::vector<uint16_t> ports;
+    loops.reserve(workerCount * (tlsCfg.enabled ? 2u : 1u));
+    ports.reserve(loops.capacity());
     for (unsigned int i = 0; i < workerCount; ++i) {
-        loops.push_back(std::make_unique<vless::server::EventLoop>(makeFactory(nullptr)));
+        loops.push_back(std::make_unique<vless::server::EventLoop>(plainFactory));
         ports.push_back(cfg.port);
-    }
-    if (tlsCfg.enabled) {
-        for (unsigned int i = 0; i < workerCount; ++i) {
-            loops.push_back(std::make_unique<vless::server::EventLoop>(makeFactory(tlsCtx.get())));
+        if (tlsCfg.enabled) {
+            loops.push_back(std::make_unique<vless::server::EventLoop>(tlsFactory));
             ports.push_back(cfg.tls.port);
         }
     }
