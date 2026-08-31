@@ -126,7 +126,7 @@ jobs:
             echo "=== 构建 Docker 镜像 ==="
             docker build -t ${{ env.DOCKER_IMAGE }}:latest .
 
-            # 清理同名旧容器（旧名 vmess 容器的退役由运维手动处理，不在此处自动删除）
+            # 清理同名旧容器（历史 vmess 容器已于 2026-08-28 手动退役，此后仅管理 vless 容器）
             echo "=== 重启容器 ==="
             docker stop vless || true
             docker rm vless || true

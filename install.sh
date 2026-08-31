@@ -45,7 +45,8 @@ CONFIG_DIR="/etc/vless"
 CONFIG_FILE="${CONFIG_DIR}/config.json"
 CERT_DIR="/var/lib/vless/certs"
 LOG_FILE="/var/log/vless.log"
-SERVICE_NAME="vless_server"
+SERVICE_NAME="vless_server"          # systemd 服务名
+CONTAINER_NAME="vless"               # Docker 容器名（与 deploy.yml 一致）
 
 PORT="${VLESS_PORT:-1080}"
 TLS_PORT="${VLESS_TLS_PORT:-8848}"
@@ -270,15 +271,15 @@ ENTRYPOINT ["/usr/local/bin/vless_server"]
 CMD ["--config", "/etc/vless/config.json"]
 EOF
   docker build -t cppvless:latest "${TMP_CTX}" >/dev/null
-  docker rm -f "${SERVICE_NAME}" >/dev/null 2>&1 || true
-  docker run -d --name "${SERVICE_NAME}" \
+  docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+  docker run -d --name "${CONTAINER_NAME}" \
     --network host \
     --privileged \
     --restart unless-stopped \
     -v "${CONFIG_DIR}:/etc/vless" \
     -v "${CERT_DIR}:${CERT_DIR}" \
     cppvless:latest >/dev/null
-  info "容器 ${SERVICE_NAME} 已启动"
+  info "容器 ${CONTAINER_NAME} 已启动"
 elif command -v systemctl >/dev/null 2>&1; then
   info "以 systemd 服务启动 ${SERVICE_NAME}"
   cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<EOF
@@ -324,10 +325,18 @@ info "明文端口:  ${PORT}（VLESS）"
 info "TLS 端口:  ${TLS_PORT}（VLESS + TLS，自签证书）"
 info "UUID:      ${UUID}"
 if [ -n "${PUBLIC_HOST}" ]; then
-  info "分享链接（客户端扫码/粘贴导入，服务端日志亦会输出 + 二维码）："
+  info "分享链接：见服务端启动日志（含证书指纹 pcs/pinSHA256，可扫码导入）"
   echo
-  echo "  vless://${UUID}@${PUBLIC_HOST}:${TLS_PORT}?encryption=none&security=tls&type=tcp&headerType=none&allowInsecure=1#cppvless"
+  if [ "${USE_DOCKER}" -eq 1 ]; then
+    echo "  docker logs ${CONTAINER_NAME} 2>&1 | head -40"
+  elif command -v systemctl >/dev/null 2>&1; then
+    echo "  journalctl -u ${SERVICE_NAME} --no-pager | head -50"
+  else
+    echo "  cat /tmp/vless.out"
+  fi
   echo
+  echo "  说明：自签证书场景的分享链接必须含证书指纹 pcs/pinSHA256"
+  echo "  （Xray 26.2.6+ 已移除 allowInsecure，手工拼接的旧格式链接不再可用）"
 fi
 info "本机客户端启动（SOCKS5 → VLESS）："
 echo
