@@ -253,7 +253,7 @@ void printBanner(const vless::common::ServerConfig& cfg, const std::string& conf
     // 分享链接 + 二维码（需配置公网地址 host / --public-host）
     if (!cfg.host.empty()) {
         for (size_t i = 0; i < cfg.users.size(); ++i) {
-            const std::string link = vless::common::buildVlessLink(cfg.host, cfg, cfg.users[i]);
+            const std::string link = vless::common::buildVlessLink(cfg.host, cfg, cfg.users[i], cfg.remark);
             if (link.empty()) {
                 continue;
             }

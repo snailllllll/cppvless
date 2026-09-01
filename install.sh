@@ -220,6 +220,7 @@ if [ ! -f "${CONFIG_FILE}" ]; then
   "host": "${VLESS_PUBLIC_HOST:-}",
   "log_level": "${LOG_LEVEL}",
   "workers": 0,
+  "remark": "${VLESS_NODE_NAME:-cppvless}",
   "tls": {
     "enabled": true,
     "port": ${TLS_PORT},

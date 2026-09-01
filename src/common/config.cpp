@@ -341,6 +341,7 @@ bool writeServerConfig(const std::string& path, const ServerConfig& cfg,
     oss << "  \"host\": \"" << jsonEscape(cfg.host) << "\",\n";
     oss << "  \"log_level\": \"" << jsonEscape(cfg.logLevel) << "\",\n";
     oss << "  \"workers\": " << cfg.workers << ",\n";
+    oss << "  \"remark\": \"" << jsonEscape(cfg.remark) << "\",\n";
     oss << "  \"tls\": {\n";
     oss << "    \"enabled\": " << (cfg.tls.enabled ? "true" : "false") << ",\n";
     oss << "    \"port\": " << static_cast<int>(cfg.tls.port) << ",\n";
@@ -423,6 +424,9 @@ bool loadServerConfig(const std::string& path, ServerConfig& cfg,
     }
     if (const Json* v = root->get("workers"); v && v->isNumber()) {
         cfg.workers = static_cast<int>(v->asInt());
+    }
+    if (const Json* v = root->get("remark"); v && v->isString()) {
+        cfg.remark = v->asString();
     }
 
     if (const Json* t = root->get("tls"); t && t->isObject()) {
