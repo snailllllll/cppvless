@@ -339,8 +339,4 @@ finishClientTask():
 |---|---|
 | 现有架构总览 | `current-architecture.md` |
 | io_uring 指针直分发模型 | `uring-op-pointer-convergence.md` |
-| 协程架构（框架内设计稿） | `doc/dev/design/vless_coroutine_architecture.md` |
-| IO 超时与取消机制（设计稿） | `doc/dev/design/coro-io-timeout-cancellation-design.md` |
-| 定时任务与调度语义（设计稿） | `doc/dev/design/coro-periodic-task-design.md` |
 | 协程 Task 构造 / 挂起恢复 / AsyncRecv vs Task（外部笔记） | `cpp-playground/doc/vless-coro-*.md`（已发布至笔记平台） |
-| fd 空闲超时回收（设计稿） | `doc/dev/design/fd-idle-timeout-design.md` |

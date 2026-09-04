@@ -1,7 +1,7 @@
-# 当前架构速览（学习地图）
+# 当前架构速览
 
-> 更新日期：2026-08-15
-> 本文以当前代码为准，是新读者/学习者的第一入口。读完本文可建立整体地图，再深入各模块。
+> 更新日期：2026-09-04
+> 本文以当前代码为准，是项目架构的精确描述，供开发者快速建立整体认知并定位各模块。
 > 相关索引见 `doc/README.md`。
 
 ## 0. 项目一句话
@@ -30,7 +30,7 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## 2. 协程与 io_uring 基础（理解一切的前提）
+## 2. 协程与 io_uring 基础
 
 ### 2.1 协程类型 `coro::Task<T>`
 
@@ -138,7 +138,7 @@ runUdpSession:
   relayUdpClientToTarget / relayUdpTargetToClient（2 字节长度帧，见 §8）
 ```
 
-### 5.4 半关闭模型（学习重点）
+### 5.4 半关闭模型
 
 标志位：`clientReadDone_`（client→target 方向 EOF）、`targetReadDone_`（target→client EOF）。
 
@@ -201,13 +201,13 @@ clientTask_:
        等待控制连接关闭 → 停止 relay
 ```
 
-`Socks5UdpRelay` 并发模型（学习重点，单线程约束的巧妙之处）：
+`Socks5UdpRelay` 并发模型（单线程约束下的汇聚设计）：
 - `recvLoop_`：独占 `(udpFd, READ)`，收应用 UDP 数据报，按目标路由到会话；
 - 每个会话 `outTask_`：独占 `(remoteFd, READ)`，读长度帧 → 入队；
 - `sendLoop_`：独占 `(udpFd, WRITE)` 与 `(eventFd, READ)`，**eventfd 唤醒队列**批量 sendto；
 - 因为同一 fd 同一类型只能一个挂起操作，所以用 **eventfd + 队列** 把多个会话的回程汇聚到单一 sendLoop。
 
-## 10. 关键数据流（TCP 一次完整请求，学习脉络）
+## 10. 关键数据流（TCP 一次完整请求）
 
 ```
 iOS/SOCKS5 客户端 ──TCP──> VlessConnection ──TCP──> 目标服务器
@@ -239,9 +239,9 @@ cmake --build build -j$(nproc)
 ./build/src/vless_client --socks5-port 1080 --remote <host>:<port> --uuid <uuid>
 ```
 
-## 12. 已知的坑与待办（学习时留意）
+## 12. 已知限制与待办
 
 - `createTargetSocket` / `resolveRemote` 只取 getaddrinfo **第一个** IPv4/IPv6 结果（无多地址回退）→ 已列为待修；
 - UDP 会话帧解析简化：半帧数据丢弃尾部（`socks5_udp_relay.cpp` 注释）；
 - 明文 VLESS 在墙内易被 GFW 识别 → 参见 `server-tls-support.md`（TLS 改造进行中）；
-- 日志走 `std::cerr` + 每次 flush，高并发下性能差 → 参见 `dev/design/logging-plan.md`（spdlog 改造进行中）。
+- 日志走 `std::cerr` + 每次 flush，高并发下性能差 → 异步日志改造进行中。

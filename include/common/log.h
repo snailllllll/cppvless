@@ -16,7 +16,7 @@ enum class LogLevel {
 };
 
 /**
- * @brief 轻量异步日志器（目标 A 方案，见 doc/dev/design/logging-plan.md）
+ * @brief 轻量异步日志器
  *
  * 设计要点：
  *   - 调用点只做拼接 + 入队（一次加锁 push），不做任何 I/O；
