@@ -3,7 +3,7 @@
 > 状态：**已实现（阶段 1–3 完成并验证）**；阶段 4（客户端 TLS）待做
 > 日期：2026-08-15（设计）/ 2026-08-15（实现）
 > 目标版本：v1（VLESS over TLS，服务端内置 TLS 终结）
-> 关联：实现顺序参见 `doc/README.md` 索引与 `doc/19-current-architecture.md`
+> 关联：实现顺序参见 `doc/README.md` 索引与 `current-architecture.md`
 
 ## 1. 背景
 
@@ -311,7 +311,7 @@ Release 产物可手动部署到任意机器（不依赖 CI 部署服务器）�
 ## 16. 阶段目标总览
 
 - 目标 1：TLS 支持（阶段1 Stream 抽象 → 阶段2 TlsStream → 阶段3 CLI+部署）—— **服务端部分完成**，阶段 4（客户端 TLS）待做
-- 目标 2：日志性能改造（异步日志，解耦 worker 与日志 I/O，增强排障信息）—— 方案见 `doc/20-logging-plan.md`，选型讨论中
+- 目标 2：日志性能改造（异步日志，解耦 worker 与日志 I/O，增强排障信息）—— 方案见 `doc/dev/design/logging-plan.md`，选型讨论中
 - 展望：订阅与动态节点自动化、GitHub Releases 发布流程
 
 ## 17. 后续展望：订阅与动态节点自动化（Draft）

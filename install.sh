@@ -17,7 +17,7 @@
 #       默认 VLESS_SOURCE=binary —— 从 GitHub Releases 下载预编译产物
 #       （amd64/arm64，静态链接，仅依赖 glibc + OpenSSL3），SHA256 校验
 #       可选 VLESS_SOURCE=source —— 现场编译（Docker 静态构建或系统工具链）
-#   2) 可选启用 TCP BBR（参考 doc/22-server-ops-tuning.md），默认开启
+#   2) 可选启用 TCP BBR（参考 doc/server-ops-tuning.md），默认开启
 #   3) 生成 /etc/vless/config.json（幂等：首次生成随机 UUID，重复安装复用）
 #   4) 启动服务（Docker host 网络 + privileged；无 Docker 用 systemd / nohup）
 #   5) 打印 VLESS 连接信息与客户端用法

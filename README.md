@@ -160,8 +160,7 @@ third_party/                  # BLAKE3、qrcodegen 等第三方源码
 
 | 文档 | 说明 |
 |---|---|
-| `doc/19-current-architecture.md` | 当前架构速览（学习入口） |
-| `doc/18-server-tls-support.md` | 内置 TLS 支持设计 |
-| `doc/20-logging-plan.md` | 日志改造方案 |
-| `doc/22-server-ops-tuning.md` | 服务端运维调优（TCP BBR 等） |
-| `doc/vless-protocol-evolution-log.md` | 协议与运行时演进日志 |
+| `doc/current-architecture.md` | 当前架构速览（学习入口） |
+| `doc/server-tls-support.md` | 内置 TLS 支持设计 |
+| `doc/uring-op-pointer-convergence.md` | io_uring 桥接层机制（user_data 指针化 + cancelFd） |
+| `doc/server-ops-tuning.md` | 服务端运维调优（TCP BBR 等） |

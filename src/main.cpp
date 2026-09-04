@@ -66,7 +66,7 @@ void printUsage(const char* prog) {
         "                      本机公网 IP，VLESS_NO_AUTO_HOST=1 可关闭探测）\n"
         "  --log-file <path>  日志落盘文件（异步日志追加写入；默认仅 stderr）\n"
         "\n"
-        "证书语义（见 doc/18-server-tls-support.md）：\n"
+        "证书语义（见 doc/server-tls-support.md）：\n"
         "  --tls-port + --cert/--key     → 使用正式证书\n"
         "  --tls-port 无证书             → 自签证书保底（自动生成，落盘复用）\n"
         "  --tls-port + 证书加载失败     → 报错退出（fail-fast，不静默降级）\n"

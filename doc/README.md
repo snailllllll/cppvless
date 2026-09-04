@@ -1,39 +1,35 @@
 # 项目文档索引
 
-> 维护日期：2026-08-19
+> 维护日期：2026-09-03
 > 项目：C++20 + io_uring + 协程实现的 VLESS 代理（服务端 + SOCKS5 客户端）
+
+> 本目录只保留**当前生效的说明性文档**（架构、机制、运维），作为项目对外的说明材料。
+> 设计方案、规划、学习笔记、压测与排障记录在 `doc/dev/` —— 本地开发文档库，
+> 由 `.gitignore` 忽略、独立纳管，入口见 `dev/README.md`。
 
 ## 文档结构
 
 ```
 doc/
-├── README.md                     # 本索引
-├── 19-current-architecture.md    # 当前架构速览（新读者第一入口）
-├── 18-server-tls-support.md      # 内置 TLS 支持设计（已实施）
-├── 20-logging-plan.md            # 日志改造方案（阶段 1 已实施）
-├── 21-uring-op-pointer-convergence.md  # io_uring 桥接层收敛（已实施）
-├── 22-server-ops-tuning.md       # 服务端运维调优（TCP BBR，已实施）
-├── 26-benchmark-report.md        # cpp-vless vs Go 性能压测综合报告（v0.0.2，最终结论）
-├── 27-double-free-troubleshooting.md  # double-free 崩溃排障全流程（v0.0.2 修复记录）
-├── benchmark-data/               # 压测原始逐轮数据 CSV
- └── vless-protocol-evolution-log.md    # 协议与运行时演进日志
+├── README.md                        # 本索引
+├── current-architecture.md          # 当前架构速览（新读者第一入口）
+├── server-tls-support.md            # 内置 TLS 支持（已实施）
+├── uring-op-pointer-convergence.md  # io_uring 桥接层：user_data 指针化 + cancelFd（已实施）
+├── server-ops-tuning.md             # 服务端运维调优：TCP BBR、跨境链路（已实施）
+├── new-protocol-development-guide.md # 新协议开发指南（开发者扩展入口）
+└── dev/                             # 开发文档库（不入本仓库）：方案 / 笔记 / 压测 / 排障
 ```
-
-> `doc/dev/`：本地开发讨论与学习资料（外部知识笔记、早期设计、参考代码、开发期压测过程文档），
-> 不入库（见 `.gitignore`）。含：
-> - `dev/notes/`   —— 外部知识/语言特性学习笔记
-> - `dev/design/`  —— 早期设计/规划（含 history/），与当前实现不符
-> - `dev/reference/` —— 外部参考代码仓库（HXLibs、Xray-core 等）
-> - `dev/benchmark/` —— 开发期压测过程文档（首轮方法、接管说明、复测记录）与原始数据备份
 
 ## 阅读顺序（面向学习）
 
 ```
 doc/README.md（本索引）
-  └─ doc/19-current-architecture.md（当前架构速览 ← 建议最先读）
-       └─ doc/18-server-tls-support.md（内置 TLS）
-       └─ doc/20-logging-plan.md（异步日志）
-       └─ doc/vless-protocol-evolution-log.md（协议演进，最贴近现状）
+  └─ doc/current-architecture.md（当前架构速览 ← 建议最先读）
+       └─ doc/server-tls-support.md（内置 TLS）
+       └─ doc/uring-op-pointer-convergence.md（io_uring 桥接机制）
+       └─ doc/server-ops-tuning.md（运维调优）
+       └─ doc/new-protocol-development-guide.md（要加新协议时读）
+       └─ doc/dev/README.md（设计方案与规划，按需查阅）
        └─ src/ include/（代码）
 ```
 
@@ -41,15 +37,11 @@ doc/README.md（本索引）
 
 | 文档 | 说明 |
 |---|---|
-| `19-current-architecture.md` | 当前架构速览，以代码为准，学习地图 |
-| `18-server-tls-support.md` | 服务端内置 TLS 支持设计（已实施，含订阅展望） |
-| `20-logging-plan.md` | 日志改造方案（阶段 1 已实施） |
-| `21-uring-op-pointer-convergence.md` | io_uring user_data 指针化 + cancelFd 取消模型（已实施） |
-| `22-server-ops-tuning.md` | 服务端运维调优：TCP BBR 开启、跨境链路测速与分层定位（已实施） |
-| `26-benchmark-report.md` | **压测综合报告**：环境/方案/脚本/步骤/逐轮数据/结论（最终结论，v0.0.2） |
-| `27-double-free-troubleshooting.md` | **double-free 崩溃排障全流程**：复现→gdb→反汇编→根因→修复→验证（v0.0.2） |
-| `benchmark-data/` | 压测逐轮原始数据（bench_l1/l2/c100/c200.csv） |
-| `vless-protocol-evolution-log.md` | 协议与运行时演进日志 |
+| `current-architecture.md` | 当前架构速览，以代码为准，学习地图 |
+| `server-tls-support.md` | 服务端内置 TLS 支持设计（已实施，含订阅展望） |
+| `uring-op-pointer-convergence.md` | io_uring user_data 指针化 + cancelFd 取消模型（已实施） |
+| `server-ops-tuning.md` | 服务端运维调优：TCP BBR 开启、跨境链路测速与分层定位（已实施） |
+| `new-protocol-development-guide.md` | 基于 vless 框架添加新应用层协议的开发者指南（扩展点、步骤、踩坑清单） |
 
 ## 配置与部署
 

@@ -28,7 +28,7 @@ struct TlsConfig {
 /**
  * @brief 创建服务器 SSL_CTX（证书三级判定入口）
  *
- * 语义分级（见 doc/18-server-tls-support.md §6.3.1）：
+ * 语义分级（见 doc/server-tls-support.md §6.3.1）：
  *   - 配置了 --cert/--key  → 加载文件证书（失败报错退出，不降级）
  *   - 仅 --tls-port         → 自签保底：certDir 下已有有效证书则复用，
  *                             否则生成并落盘；剩余有效期 <30 天自动重签

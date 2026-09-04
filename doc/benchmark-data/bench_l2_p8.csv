@@ -1,7 +1,0 @@
-mode,side,round,metric,cpu_max_pct
-l2,l2_cpp_plain,1,1.39,108.0
-l2,l2_cpp_plain,2,1.56,101.0
-l2,l2_cpp_plain,3,1.49,101.0
-l2,l2_go_plain,1,1.66,105.0
-l2,l2_go_plain,2,1.66,112.0
-l2,l2_go_plain,3,1.64,107.0

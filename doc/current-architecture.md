@@ -243,5 +243,5 @@ cmake --build build -j$(nproc)
 
 - `createTargetSocket` / `resolveRemote` 只取 getaddrinfo **第一个** IPv4/IPv6 结果（无多地址回退）→ 已列为待修；
 - UDP 会话帧解析简化：半帧数据丢弃尾部（`socks5_udp_relay.cpp` 注释）；
-- 明文 VLESS 在墙内易被 GFW 识别 → 参见 `18-server-tls-support.md`（TLS 改造进行中）；
-- 日志走 `std::cerr` + 每次 flush，高并发下性能差 → 参见 `20-logging-plan.md`（spdlog 改造进行中）。
+- 明文 VLESS 在墙内易被 GFW 识别 → 参见 `server-tls-support.md`（TLS 改造进行中）；
+- 日志走 `std::cerr` + 每次 flush，高并发下性能差 → 参见 `dev/design/logging-plan.md`（spdlog 改造进行中）。
