@@ -38,8 +38,12 @@ public:
     void stop();
 
 private:
-    /// Accept 协程：循环 co_await AsyncAccept 接受新连接
+    /// Accept 协程：循环 co_await AsyncAccept 接受新连接，
+    /// 唤醒后用非阻塞 accept4 排空 listen backlog（见 §3.5 设计文档）
     coro::Task<void> acceptLoop();
+
+    /// 点火新连接：工厂创建协议连接并启动（co_await 主路径与 backlog 排空共用）
+    void acceptFd(int fd);
 
     void cleanupClosedConnections();
 
