@@ -20,6 +20,12 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+class TargetHTTPServer(HTTPServer):
+    # HTTPServer 继承自 socketserver.TCPServer，request_queue_size 默认 5：
+    # 并发压测/CI 时超出的 SYN 被静默丢弃，客户端 1s SYN 重传，测出假 1s 台阶延迟。
+    request_queue_size = 1024
+
+
 if __name__ == '__main__':
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 18080
-    HTTPServer(('127.0.0.1', port), Handler).serve_forever()
+    TargetHTTPServer(('127.0.0.1', port), Handler).serve_forever()
