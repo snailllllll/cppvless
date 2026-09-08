@@ -12,8 +12,13 @@ jobs:
   # ══════════════════════════════════════════════
   # 构建阶段：容器内静态编译（与 build.sh / deploy.yml 一致）
   #   amd64:  原生编译
-  #   arm64:  QEMU 模拟 + arm64v8/ubuntu:22.04 编译
+  #   arm64:  QEMU 模拟 + arm64v8/ubuntu:22.04 编译（耗时更久，但保持双架构发布）
   # 产物仅依赖 glibc + OpenSSL3，跨发行版兼容
+  #
+  # 每架构发布三类产物（均附带 .sha256）：
+  #   1) cppvless-linux-<arch>.tar.gz    server + client 打包（install.sh 使用，保持兼容）
+  #   2) cppvless-server-linux-<arch>    server 裸二进制（无压缩包工具的环境直接取用）
+  #   3) cppvless-client-linux-<arch>    client 裸二进制（同上）
   # ══════════════════════════════════════════════
   build:
     name: Build (${{ matrix.arch }})
@@ -53,13 +58,20 @@ jobs:
             cmake --build build-docker -j\$(nproc)
           "
 
-      - name: Package tarball + checksum
+      - name: Package tarball + standalone binaries + checksums
         run: |
           mkdir -p dist
+          # 1) 打包产物（install.sh 依赖，保持兼容）
           tar -czf dist/cppvless-linux-${{ matrix.arch }}.tar.gz \
             -C build-docker/src vless_server vless_client
           sha256sum dist/cppvless-linux-${{ matrix.arch }}.tar.gz \
             | awk '{print $1}' > dist/cppvless-linux-${{ matrix.arch }}.tar.gz.sha256
+          # 2) 单独的裸二进制（无 tar/压缩包工具的环境可直接下载使用）
+          for bin in server client; do
+            cp "build-docker/src/vless_${bin}" "dist/cppvless-${bin}-linux-${{ matrix.arch }}"
+            sha256sum "dist/cppvless-${bin}-linux-${{ matrix.arch }}" \
+              | awk '{print $1}' > "dist/cppvless-${bin}-linux-${{ matrix.arch }}.sha256"
+          done
           ls -lh dist/
 
       - name: Upload artifact
@@ -86,4 +98,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/**/*
-          generate_release_notes: true
+          # 说明手工撰写并纳管（.github/release-notes.md）：自动生成的 notes 会混入
+          # docs 提交，且无法按语义归类。发版前更新该文件。
+          body_path: .github/release-notes.md
