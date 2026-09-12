@@ -1,3 +1,8 @@
+---
+type: ops
+status: stable
+---
+
 # 服务端运维调优：TCP BBR 加速跨境链路
 
 > 状态：**已实施并验证**

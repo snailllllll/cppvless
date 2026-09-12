@@ -1,6 +1,8 @@
 ---
 title: 基于 vless 框架添加新应用层协议指南
 updated: 2026-09-03
+type: reference
+status: stable
 ---
 
 # 基于 vless 框架添加新应用层协议指南

@@ -1,3 +1,8 @@
+---
+type: reference
+status: stable
+---
+
 # io_uring 桥接层收敛：user_data 指针化 + cancelFd 取消模型
 
 > 状态：已实施（2026-08-15）

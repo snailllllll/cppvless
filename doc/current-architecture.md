@@ -1,3 +1,8 @@
+---
+type: reference
+status: stable
+---
+
 # 当前架构速览
 
 > 更新日期：2026-09-04

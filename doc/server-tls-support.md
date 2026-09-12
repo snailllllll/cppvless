@@ -1,3 +1,8 @@
+---
+type: reference
+status: stable
+---
+
 # 服务端内置 TLS 支持设计文档
 
 > 状态：**已实现（阶段 1–3 完成并验证）**；阶段 4（客户端 TLS）待做
