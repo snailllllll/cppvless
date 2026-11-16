@@ -13,6 +13,7 @@
 #include "net/tls.h"
 #include "net/tls_stream.h"
 #include "server/connection.h"
+#include "server/traffic.h"
 
 #include <cstdint>
 #include <memory>
@@ -109,6 +110,9 @@ private:
     /// 完全关闭连接（释放所有资源）
     void doClose();
 
+    void countUp(size_t n);
+    void countDown(size_t n);
+
     // ── 成员 ──
 
     int clientFd_;
@@ -153,6 +157,9 @@ private:
     std::unique_ptr<proxy::vless::EncryptionSession> encryptionSession_;
     std::vector<uint8_t> clientPublicKey_;  // 客户端 X25519 公钥（32字节）
     proxy::vless::Command command_ = proxy::vless::Command::TCP;
+
+    std::shared_ptr<TrafficCounters> counters_;
+    bool connCounted_ = false;
 };
 
 } // namespace server

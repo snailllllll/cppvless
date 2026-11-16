@@ -300,6 +300,8 @@ Task<RecvResult> read() {
 | GFW 伪装（SNI） | SNI=正常域名，放行 | SNI=IP/空，纯 IP TLS 流量特征可疑，被识别风险高 |
 | 动态节点（竞价实例） | 必须域名（IP 会变，DNS 统一管理） | IP 一变客户端需改配置 |
 
+> **2026-11-16 勘误**：上表「动态节点必须域名」是当时的展望，线上已经不这么做。竞价节点和东京保底节点的订阅链接都是 IP + 自签证书 + `pcs`，控制面不改 DNS。域名到期影响的是 `*.dev.9zh.fun` 和东京机上的 openresty，不是这条 vless 链接。记录见 notes://gitops/doc/design/dev-domain-cutover.md。
+
 取舍建议：
 - 临时验证/个人自用：IP + 自签证书 + iOS allowInsecure —— **v1 自签保底（6.3.1）内置后，此路径零部署步骤**（无需手动跑 openssl、无需挂载证书）
 - 正式/稳定：域名 + Let's Encrypt（免费、零客户端配置；`--cert`/`--key` 指定后保底自动失效）
@@ -320,6 +322,8 @@ Release 产物可手动部署到任意机器（不依赖 CI 部署服务器）�
 - 展望：订阅与动态节点自动化、GitHub Releases 发布流程
 
 ## 17. 后续展望：订阅与动态节点自动化（Draft）
+
+> **已被取代（2026-11-16）**：订阅与竞价节点已由 vlessctl 实现，链接形态是 IP + 自签 + `pcs`，不是下文的「域名 + DNSPod」。可观测与多用户规划见 notes://vlessctl/doc/observability-plan.md。下文保留作当时的讨论记录。
 
 > 目标形态：标准机场模式——控制面生成订阅，客户端（Shadowrocket/Stash/Clash）定时拉取；
 > 节点通过腾讯云竞价实例动态申请/销毁，DNS 统一由控制面管理。

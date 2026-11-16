@@ -22,6 +22,7 @@ coro::Task<bool> VlessConnection::relayUdpClientToTarget() {
                 break;
             }
             if (pktLen > 0) {
+                countUp(pktLen);
                 int written = co_await targetStream.writeFull(
                     pending.data() + offset + 2, pktLen);
                 if (written <= 0) {
@@ -75,6 +76,7 @@ coro::Task<void> VlessConnection::relayUdpTargetToClient() {
             continue;
         }
 
+        countDown(rr.data.size());
         std::vector<uint8_t> framed;
         framed.reserve(2 + rr.data.size());
         uint16_t len = static_cast<uint16_t>(rr.data.size());

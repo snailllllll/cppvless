@@ -1,5 +1,7 @@
+#include "server/admin.h"
 #include "server/event_loop.h"
 #include "server/event_loop_runner.h"
+#include "server/traffic.h"
 #include "server/vless_connection.h"
 #include "common/log.h"
 #include "common/config.h"
@@ -41,6 +43,8 @@ struct Cli {
     int certDays = 365;
     bool publicHostSet = false;
     std::string publicHost;
+    bool adminPortSet = false;
+    unsigned adminPort = 0;
 };
 
 void printUsage(const char* prog) {
@@ -64,6 +68,7 @@ void printUsage(const char* prog) {
         "  --public-host <host> 公网地址（域名/IP），用于生成 vless:// 分享链接与\n"
         "                      二维码（默认取配置文件 host 字段；均未配置时自动探测\n"
         "                      本机公网 IP，VLESS_NO_AUTO_HOST=1 可关闭探测）\n"
+        "  --admin-port <port> 回环管理面端口（只绑 127.0.0.1；0 或不传表示关闭）\n"
         "  --log-file <path>  日志落盘文件（异步日志追加写入；默认仅 stderr）\n"
         "\n"
         "证书语义（见 doc/server-tls-support.md）：\n"
@@ -106,6 +111,9 @@ bool parseArgs(int argc, char* argv[], Cli& cli, std::string& configPath,
         } else if (arg == "--public-host" && i + 1 < argc) {
             cli.publicHostSet = true;
             cli.publicHost = argv[++i];
+        } else if (arg == "--admin-port" && i + 1 < argc) {
+            cli.adminPortSet = true;
+            cli.adminPort = static_cast<unsigned>(std::atoi(argv[++i]));
         } else if (arg == "--log-file" && i + 1 < argc) {
             logFile = argv[++i];
         } else if (arg == "-h" || arg == "--help") {
@@ -171,6 +179,9 @@ void applyCliOverrides(const Cli& cli, vless::common::ServerConfig& cfg) {
     }
     if (cli.publicHostSet) {
         cfg.host = cli.publicHost;
+    }
+    if (cli.adminPortSet) {
+        cfg.adminPort = static_cast<uint16_t>(cli.adminPort);
     }
 }
 
@@ -240,6 +251,11 @@ void printBanner(const vless::common::ServerConfig& cfg, const std::string& conf
                   << std::endl;
     } else {
         std::cerr << "Workers: " << workerCount << std::endl;
+    }
+    if (cfg.adminPort != 0) {
+        std::cerr << "Admin: 127.0.0.1:" << cfg.adminPort << std::endl;
+    } else {
+        std::cerr << "Admin: disabled" << std::endl;
     }
     std::cerr << "Users: " << cfg.users.size() << std::endl;
     for (size_t i = 0; i < cfg.users.size(); ++i) {
@@ -417,12 +433,31 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ── 9. 启动横幅 + 运行 ───────────────────────────────────────────────
+    // ── 9. 启动横幅 + 回环管理面 + 运行 ─────────────────────────────────
+    for (const auto& u : cfg.users) {
+        std::array<uint8_t, 16> parsed{};
+        if (vless::proxy::vless::Validator::parseUuid(u.uuid, parsed)) {
+            vless::server::trafficFor(parsed);
+        }
+    }
+    // 代际在第一次统计读取前就固定下来
+    (void)vless::server::trafficGeneration();
+
     printBanner(cfg, configPath, cfgCreated, workerCount, tlsCfg, tlsWarn);
+
+    vless::server::AdminServer admin(cfg, validator, configPath);
+    if (cfg.adminPort != 0) {
+        std::string adminErr;
+        if (!admin.start(cfg.adminPort, adminErr)) {
+            std::cerr << "[Main] Error: " << adminErr << std::endl;
+            return 1;
+        }
+    }
 
     std::string runError;
     const bool reusePort = workerCount > 1;
     const int rc = vless::server::runEventLoops(loops, ports, reusePort, &runError);
+    admin.stop();
     if (rc != 0) {
         std::cerr << "[Main] Error: "
                   << (runError.empty() ? "event loop failed" : runError) << std::endl;

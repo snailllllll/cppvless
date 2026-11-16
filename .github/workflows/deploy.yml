@@ -145,7 +145,8 @@ jobs:
               -v /var/lib/vless/certs:/var/lib/vless/certs \
               ${{ env.DOCKER_IMAGE }}:latest \
               1080 ${LOG_LEVEL} \
-              --tls-port 8848 --cert-dir /var/lib/vless/certs
+              --tls-port 8848 --cert-dir /var/lib/vless/certs \
+              --admin-port 19090
 
             # 清理临时文件
             rm -rf /tmp/vless_deploy /tmp/deploy.tar.gz
@@ -169,5 +170,21 @@ jobs:
 
             echo "=== 检查端口监听 ==="
             ss -tlnp | grep 1080 || echo "警告: 端口 1080 未监听"
+
+            echo "=== 回环管理面 /v1/stats ==="
+            ok=0
+            for i in 1 2 3 4 5 6 7 8 9 10; do
+              if timeout 2 bash -c 'exec 3<>/dev/tcp/127.0.0.1/19090; printf "GET /v1/stats HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n" >&3; cat <&3' | grep -q generation; then
+                ok=1
+                break
+              fi
+              sleep 1
+            done
+            if [ "$ok" != 1 ]; then
+              echo "管理面 127.0.0.1:19090 没有返回统计"
+              docker logs vless --tail 40 || true
+              exit 1
+            fi
+            echo "管理面正常"
 
             echo "=== 健康检查完成 ==="

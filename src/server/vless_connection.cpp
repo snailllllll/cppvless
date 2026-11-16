@@ -26,7 +26,23 @@ VlessConnection::VlessConnection(int clientFd, net::IoUring& uring,
       stream_(*clientStream_) {}
 
 VlessConnection::~VlessConnection() {
+    if (connCounted_ && counters_) {
+        counters_->conns.fetch_sub(1, std::memory_order_relaxed);
+        connCounted_ = false;
+    }
     doClose();
+}
+
+void VlessConnection::countUp(size_t n) {
+    if (counters_ != nullptr && n > 0) {
+        counters_->up.fetch_add(n, std::memory_order_relaxed);
+    }
+}
+
+void VlessConnection::countDown(size_t n) {
+    if (counters_ != nullptr && n > 0) {
+        counters_->down.fetch_add(n, std::memory_order_relaxed);
+    }
 }
 
 void VlessConnection::start() {
@@ -61,6 +77,9 @@ coro::Task<void> VlessConnection::clientTask() {
 
         // Phase 1: Handshake
         auto req = co_await processHandshake();
+        counters_ = trafficFor(req.uuid);
+        counters_->conns.fetch_add(1, std::memory_order_relaxed);
+        connCounted_ = true;
         command_ = req.command;
         LOG_INFO("VlessConnection", "fd=", clientFd_, " Handshake target=",
                  req.addressString(), ":", req.port,

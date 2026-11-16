@@ -1,6 +1,7 @@
 #include "proxy/vless/validator.h"
 
 #include <algorithm>
+#include <cstdio>
 
 namespace vless {
 namespace proxy {
@@ -50,13 +51,41 @@ bool Validator::addFromString(const std::string& uuid) {
 }
 
 void Validator::add(const std::array<uint8_t, 16>& uuid) {
+    std::lock_guard<std::mutex> lock(mu_);
     if (std::find(users_.begin(), users_.end(), uuid) == users_.end()) {
         users_.push_back(uuid);
     }
 }
 
+bool Validator::remove(const std::array<uint8_t, 16>& uuid) {
+    std::lock_guard<std::mutex> lock(mu_);
+    auto it = std::find(users_.begin(), users_.end(), uuid);
+    if (it == users_.end()) {
+        return false;
+    }
+    users_.erase(it);
+    return true;
+}
+
 bool Validator::contains(const std::array<uint8_t, 16>& uuid) const {
+    std::lock_guard<std::mutex> lock(mu_);
     return std::find(users_.begin(), users_.end(), uuid) != users_.end();
+}
+
+size_t Validator::size() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return users_.size();
+}
+
+std::string Validator::formatUuid(const std::array<uint8_t, 16>& uuid) {
+    char buf[37];
+    std::snprintf(buf, sizeof(buf),
+                  "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-"
+                  "%02x%02x%02x%02x%02x%02x",
+                  uuid[0], uuid[1], uuid[2], uuid[3], uuid[4], uuid[5],
+                  uuid[6], uuid[7], uuid[8], uuid[9], uuid[10], uuid[11],
+                  uuid[12], uuid[13], uuid[14], uuid[15]);
+    return std::string(buf);
 }
 
 } // namespace vless

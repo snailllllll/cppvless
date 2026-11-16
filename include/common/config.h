@@ -32,6 +32,7 @@ struct ServerConfig {
     int workers = 0;                  // 0 = 自动（CPU 核数）
     std::string host;                 // 公网地址（域名/IP），用于生成分享链接；空则不打印
     std::string remark = "cppvless";  // 分享链接备注名（客户端显示的节点名）
+    uint16_t adminPort = 0;           // 回环管理端口；0 = 不监听
     TlsConfigData tls;
     std::vector<UserConfig> users;    // 认证用户（UUID）列表
 };

@@ -69,6 +69,8 @@ add_library(vless_server_lib STATIC
     server/vless_connection_relay_tcp.cpp
     server/vless_connection_relay_udp.cpp
     server/vless_connection_target_task.cpp
+    server/traffic.cpp
+    server/admin.cpp
 )
 target_include_directories(vless_server_lib PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(vless_server_lib PUBLIC io_uring coro vless_proxy tls)

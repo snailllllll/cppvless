@@ -34,6 +34,7 @@ coro::Task<void> VlessConnection::targetTask(int targetFd) {
                     break;
                 }
 
+                countDown(rr.data.size());
                 std::vector<uint8_t> ciphertext;
                 size_t encryptedLen = encryptionSession_->encryptServer(rr.data, ciphertext);
                 if (encryptedLen == 0) {
@@ -70,6 +71,7 @@ coro::Task<void> VlessConnection::targetTask(int targetFd) {
                 }
 
                 if (!data.empty()) {
+                    countDown(data.size());
                     int written = co_await clientStream.writeFull(data);
                     if (written <= 0) {
                         normalEnd = false;
@@ -79,12 +81,14 @@ coro::Task<void> VlessConnection::targetTask(int targetFd) {
 
                 if (visionWriter_->directCopy()) {
                     LOG_DEBUG("VisionWriter", "fd=", clientFd_, " switched to direct copy");
-                    normalEnd = co_await coro::copyStream(clientStream, targetStream, closed_);
+                    normalEnd = co_await coro::copyStream(
+                        clientStream, targetStream, closed_, counters_ ? &counters_->down : nullptr);
                     break;
                 }
             }
         } else {
-            normalEnd = co_await coro::copyStream(clientStream, targetStream, closed_);
+            normalEnd = co_await coro::copyStream(
+                clientStream, targetStream, closed_, counters_ ? &counters_->down : nullptr);
         }
 
         targetReadDone_ = true;

@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -16,12 +17,16 @@ public:
 
     bool addFromString(const std::string& uuid);
     void add(const std::array<uint8_t, 16>& uuid);
+    /// 不在表里则返回 false。
+    bool remove(const std::array<uint8_t, 16>& uuid);
     bool contains(const std::array<uint8_t, 16>& uuid) const;
-    size_t size() const { return users_.size(); }
+    size_t size() const;
 
     static bool parseUuid(const std::string& uuid, std::array<uint8_t, 16>& out);
+    static std::string formatUuid(const std::array<uint8_t, 16>& uuid);
 
 private:
+    mutable std::mutex mu_;
     std::vector<std::array<uint8_t, 16>> users_;
 };
 

@@ -23,6 +23,7 @@ coro::Task<bool> VlessConnection::forwardHandshakeRemaining() {
             co_return false;
         }
         if (!plaintext.empty()) {
+            countUp(plaintext.size());
             int fwdResult = co_await targetStream.writeFull(plaintext);
             if (fwdResult <= 0) {
                 LOG_WARN("VlessConnection", "fd=", clientFd_,
@@ -33,6 +34,7 @@ coro::Task<bool> VlessConnection::forwardHandshakeRemaining() {
     } else if (useVision_) {
         auto unpadded = visionReader_->process(handshakeRemaining_);
         if (!unpadded.empty()) {
+            countUp(unpadded.size());
             int fwdResult = co_await targetStream.writeFull(unpadded);
             if (fwdResult <= 0) {
                 LOG_WARN("VlessConnection", "fd=", clientFd_,
@@ -41,6 +43,7 @@ coro::Task<bool> VlessConnection::forwardHandshakeRemaining() {
             }
         }
     } else {
+        countUp(handshakeRemaining_.size());
         int fwdResult = co_await targetStream.writeFull(handshakeRemaining_);
         if (fwdResult <= 0) {
             LOG_WARN("VlessConnection", "fd=", clientFd_,
@@ -81,6 +84,7 @@ coro::Task<bool> VlessConnection::relayClientToTarget() {
             }
 
             if (!plaintext.empty()) {
+                countUp(plaintext.size());
                 int written = co_await targetStream.writeFull(plaintext);
                 if (written <= 0) {
                     normalEnd = false;
@@ -109,6 +113,7 @@ coro::Task<bool> VlessConnection::relayClientToTarget() {
             }
 
             if (!data.empty()) {
+                countUp(data.size());
                 int written = co_await targetStream.writeFull(data);
                 if (written <= 0) {
                     normalEnd = false;
@@ -118,12 +123,14 @@ coro::Task<bool> VlessConnection::relayClientToTarget() {
 
             if (visionReader_->directCopy()) {
                 LOG_DEBUG("VisionReader", "fd=", clientFd_, " switched to direct copy");
-                normalEnd = co_await coro::copyStream(targetStream, clientStream, closed_);
+                normalEnd = co_await coro::copyStream(
+                    targetStream, clientStream, closed_, counters_ ? &counters_->up : nullptr);
                 break;
             }
         }
     } else {
-        normalEnd = co_await coro::copyStream(targetStream, clientStream, closed_);
+        normalEnd = co_await coro::copyStream(
+            targetStream, clientStream, closed_, counters_ ? &counters_->up : nullptr);
     }
 
     co_return normalEnd;

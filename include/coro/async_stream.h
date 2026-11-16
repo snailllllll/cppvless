@@ -7,6 +7,7 @@
 #include "net/stream.h"
 #include "common/log.h"
 
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 
@@ -78,7 +79,8 @@ private:
  * 如果不 shutdown，它会一直等下去，直到超时或对端主动关闭。
  * shutdown SHUT_WR 会发送 FIN，让对端 recv 返回 0（EOF），从而优雅退出。
  */
-inline Task<bool> copyStream(net::Stream& dst, net::Stream& src, const bool& stop) {
+inline Task<bool> copyStream(net::Stream& dst, net::Stream& src, const bool& stop,
+                             std::atomic<uint64_t>* bytes = nullptr) {
     while (!stop) {
         auto rr = co_await src.read();
         if (rr.eof()) {
@@ -97,6 +99,9 @@ inline Task<bool> copyStream(net::Stream& dst, net::Stream& src, const bool& sto
             co_return false;
         }
 
+        if (bytes != nullptr && !rr.data.empty()) {
+            bytes->fetch_add(rr.data.size(), std::memory_order_relaxed);
+        }
         int written = co_await dst.writeFull(rr.data);
         if (written <= 0) {
             // 对标 Go: writeError → 关闭 src 读端
