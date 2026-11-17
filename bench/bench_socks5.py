@@ -102,7 +102,7 @@ def main():
     ap.add_argument("--conns", type=int, default=100)
     ap.add_argument("--duration", type=int, default=10)
     ap.add_argument("--mode", choices=["conn", "http"], default="http")
-    ap.add_argument("--target", default="43.133.180.80:8080", help="HTTP 目标 host:port（东京后端）")
+    ap.add_argument("--target", required=True, help="HTTP 目标 host:port")
     args = ap.parse_args()
 
     phost, pport = args.proxy.split(":")
